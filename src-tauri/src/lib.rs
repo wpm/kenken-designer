@@ -128,12 +128,11 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         target_os = "openbsd"
     )))]
     let file_menu = {
-        #[cfg(target_os = "macos")]
-        let items: Vec<&dyn IsMenuItem<R>> = vec![&PredefinedMenuItem::close_window(app, None)?];
-        #[cfg(not(target_os = "macos"))]
         let close = PredefinedMenuItem::close_window(app, None)?;
         #[cfg(not(target_os = "macos"))]
         let quit = PredefinedMenuItem::quit(app, None)?;
+        #[cfg(target_os = "macos")]
+        let items: Vec<&dyn IsMenuItem<R>> = vec![&close];
         #[cfg(not(target_os = "macos"))]
         let items: Vec<&dyn IsMenuItem<R>> = vec![&close, &quit];
         Some(Submenu::with_items(app, "File", true, &items)?)
