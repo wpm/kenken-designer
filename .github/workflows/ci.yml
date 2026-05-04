@@ -29,9 +29,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-webkit2gtk-4.1
 
       - name: Install system dependencies
         run: |
@@ -74,7 +83,14 @@ jobs:
             -D clippy::print_stderr
 
       - name: Test (Tauri backend)
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
+        run: cargo llvm-cov --manifest-path src-tauri/Cargo.toml --all-features --lcov --output-path lcov.info
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: wpm/kenken-designer
+          files: lcov.info
 
       - name: Doc
         run: |
