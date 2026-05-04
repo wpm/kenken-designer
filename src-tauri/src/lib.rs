@@ -143,4 +143,60 @@ mod tests {
         assert!(!apply_menu_action(&mut s, ""));
         assert_eq!(s.current().n(), 3);
     }
+
+    #[test]
+    fn build_app_menu_constructs_edit_submenu() {
+        let app = tauri::test::mock_app();
+        let menu = build_app_menu(app.handle()).unwrap();
+        let items = menu.items().unwrap();
+        assert_eq!(items.len(), 1, "expected a single Edit submenu");
+    }
+
+    fn current_n(app: &tauri::App<tauri::test::MockRuntime>) -> usize {
+        let state = app.state::<Mutex<Session>>();
+        let n = state.lock().unwrap().current().n();
+        n
+    }
+
+    #[test]
+    fn handle_menu_event_undoes_when_id_is_undo() {
+        let app = tauri::test::mock_app();
+        let mut session = Session::new(Puzzle::new(3).unwrap());
+        session.commit(Puzzle::new(4).unwrap());
+        app.manage(Mutex::new(session));
+
+        handle_menu_event(
+            app.handle(),
+            MenuEvent {
+                id: tauri::menu::MenuId::new("undo"),
+            },
+        );
+
+        assert_eq!(current_n(&app), 3);
+    }
+
+    #[test]
+    fn handle_menu_event_ignores_unknown_id() {
+        let app = tauri::test::mock_app();
+        let session = Session::new(Puzzle::new(3).unwrap());
+        app.manage(Mutex::new(session));
+
+        handle_menu_event(
+            app.handle(),
+            MenuEvent {
+                id: tauri::menu::MenuId::new("quit"),
+            },
+        );
+
+        assert_eq!(current_n(&app), 3);
+    }
+
+    #[test]
+    fn handle_menu_event_no_op_when_state_missing() {
+        let app = tauri::test::mock_app();
+        let event = MenuEvent {
+            id: tauri::menu::MenuId::new("undo"),
+        };
+        handle_menu_event(app.handle(), event);
+    }
 }
