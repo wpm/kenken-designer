@@ -42,6 +42,7 @@ pub enum OpKind {
     Given,
 }
 
+#[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
 async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
     let args = serde_wasm_bindgen::to_value(&args).ok()?;
     let value = invoke(cmd, args).await;
@@ -80,8 +81,7 @@ pub fn App() -> impl IntoView {
     let current_n = move || {
         puzzle
             .get()
-            .map(|v| v.n.to_string())
-            .unwrap_or_else(|| "4".to_string())
+            .map_or_else(|| "4".to_string(), |v| v.n.to_string())
     };
 
     view! {

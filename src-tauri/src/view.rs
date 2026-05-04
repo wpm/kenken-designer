@@ -58,6 +58,7 @@ impl From<&Puzzle> for PuzzleView {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

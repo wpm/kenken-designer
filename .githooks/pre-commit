@@ -1,0 +1,68 @@
+#!/bin/sh
+set -e
+
+# Auto-fix formatting and stage the result
+cargo fmt --all
+git add -u
+
+# Auto-fix clippy lints where possible (backend)
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --fix --allow-staged --allow-dirty -- \
+    -D warnings \
+    -D clippy::all \
+    -D clippy::pedantic \
+    -D clippy::nursery \
+    -D clippy::unwrap_used \
+    -D clippy::expect_used \
+    -D clippy::panic \
+    -D clippy::todo \
+    -D clippy::unimplemented \
+    -D clippy::dbg_macro \
+    -D clippy::print_stdout \
+    -D clippy::print_stderr
+git add -u
+
+# Auto-fix clippy lints where possible (frontend)
+cargo clippy --manifest-path Cargo.toml --all-targets --target wasm32-unknown-unknown --fix --allow-staged --allow-dirty -- \
+    -D warnings \
+    -D clippy::all \
+    -D clippy::pedantic \
+    -D clippy::nursery \
+    -D clippy::unwrap_used \
+    -D clippy::expect_used \
+    -D clippy::panic \
+    -D clippy::todo \
+    -D clippy::unimplemented \
+    -D clippy::dbg_macro \
+    -D clippy::print_stdout \
+    -D clippy::print_stderr
+git add -u
+
+# Final check: fail if unfixable issues remain (backend)
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- \
+    -D warnings \
+    -D clippy::all \
+    -D clippy::pedantic \
+    -D clippy::nursery \
+    -D clippy::unwrap_used \
+    -D clippy::expect_used \
+    -D clippy::panic \
+    -D clippy::todo \
+    -D clippy::unimplemented \
+    -D clippy::dbg_macro \
+    -D clippy::print_stdout \
+    -D clippy::print_stderr
+
+# Final check: fail if unfixable issues remain (frontend)
+cargo clippy --manifest-path Cargo.toml --all-targets --target wasm32-unknown-unknown -- \
+    -D warnings \
+    -D clippy::all \
+    -D clippy::pedantic \
+    -D clippy::nursery \
+    -D clippy::unwrap_used \
+    -D clippy::expect_used \
+    -D clippy::panic \
+    -D clippy::todo \
+    -D clippy::unimplemented \
+    -D clippy::dbg_macro \
+    -D clippy::print_stdout \
+    -D clippy::print_stderr

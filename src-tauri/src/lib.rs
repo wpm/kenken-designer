@@ -10,6 +10,7 @@ use session::Session;
 use view::PuzzleView;
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn new_puzzle(n: usize, state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
     let next = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
@@ -18,26 +19,33 @@ fn new_puzzle(n: usize, state: State<Mutex<Session>>) -> Result<PuzzleView, Stri
 }
 
 #[tauri::command]
-fn get_state(state: State<Mutex<Session>>) -> PuzzleView {
-    let session = state.lock().expect("session mutex poisoned");
-    PuzzleView::from(session.current())
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn get_state(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    let session = state.lock().map_err(|e| format!("{e:?}"))?;
+    Ok(PuzzleView::from(session.current()))
 }
 
 #[tauri::command]
-fn undo(state: State<Mutex<Session>>) -> PuzzleView {
-    let mut session = state.lock().expect("session mutex poisoned");
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn undo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
     session.undo();
-    PuzzleView::from(session.current())
+    Ok(PuzzleView::from(session.current()))
 }
 
 #[tauri::command]
-fn redo(state: State<Mutex<Session>>) -> PuzzleView {
-    let mut session = state.lock().expect("session mutex poisoned");
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn redo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
     session.redo();
-    PuzzleView::from(session.current())
+    Ok(PuzzleView::from(session.current()))
 }
 
+/// # Panics
+///
+/// Panics if the Tauri application fails to start.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::expect_used)]
 pub fn run() {
     let session = Session::new(4).expect("4 is a valid grid size");
     tauri::Builder::default()
