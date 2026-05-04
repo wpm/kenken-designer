@@ -47,6 +47,20 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     MenuBuilder::new(app).item(&edit).build()
 }
 
+fn apply_menu_action(session: &mut Session, id: &str) -> bool {
+    match id {
+        "undo" => {
+            session.undo();
+            true
+        }
+        "redo" => {
+            session.redo();
+            true
+        }
+        _ => false,
+    }
+}
+
 #[allow(clippy::needless_pass_by_value)] // on_menu_event requires by-value MenuEvent
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let Some(state) = app.try_state::<Mutex<Session>>() else {
@@ -55,18 +69,10 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let Ok(mut session) = state.lock() else {
         return;
     };
-    let id: &str = event.id().as_ref();
-    match id {
-        "undo" => {
-            session.undo();
-        }
-        "redo" => {
-            session.redo();
-        }
-        _ => return,
+    if apply_menu_action(&mut session, event.id().as_ref()) {
+        let view = PuzzleView::from(session.current());
+        let _ = app.emit(PUZZLE_UPDATED_EVENT, view);
     }
-    let view = PuzzleView::from(session.current());
-    let _ = app.emit(PUZZLE_UPDATED_EVENT, view);
 }
 
 /// # Panics
@@ -98,8 +104,43 @@ mod tests {
     }
 
     #[test]
+    fn fresh_puzzle_supports_minimum_size() {
+        let p = fresh_puzzle(2).unwrap();
+        assert_eq!(p.n(), 2);
+    }
+
+    #[test]
     fn fresh_puzzle_returns_err_for_invalid_size() {
         assert!(fresh_puzzle(0).is_err());
         assert!(fresh_puzzle(99).is_err());
+    }
+
+    #[test]
+    fn apply_menu_action_undo_pops_undo_stack() {
+        let mut s = Session::new(Puzzle::new(3).unwrap());
+        s.commit(Puzzle::new(4).unwrap());
+        assert_eq!(s.current().n(), 4);
+
+        assert!(apply_menu_action(&mut s, "undo"));
+        assert_eq!(s.current().n(), 3);
+    }
+
+    #[test]
+    fn apply_menu_action_redo_pops_redo_stack() {
+        let mut s = Session::new(Puzzle::new(3).unwrap());
+        s.commit(Puzzle::new(4).unwrap());
+        s.undo();
+        assert_eq!(s.current().n(), 3);
+
+        assert!(apply_menu_action(&mut s, "redo"));
+        assert_eq!(s.current().n(), 4);
+    }
+
+    #[test]
+    fn apply_menu_action_returns_false_for_unknown_id() {
+        let mut s = Session::new(Puzzle::new(3).unwrap());
+        assert!(!apply_menu_action(&mut s, "quit"));
+        assert!(!apply_menu_action(&mut s, ""));
+        assert_eq!(s.current().n(), 3);
     }
 }

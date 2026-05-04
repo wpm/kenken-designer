@@ -103,6 +103,7 @@ pub fn App() -> impl IntoView {
                 <label>
                     "Size: "
                     <select on:change=on_size_change prop:value=current_n>
+                        <option value="2">"2"</option>
                         <option value="3">"3"</option>
                         <option value="4">"4"</option>
                         <option value="5">"5"</option>
