@@ -19,20 +19,28 @@ fn fresh_puzzle(n: usize) -> Result<Puzzle, String> {
     generate(n, &mut rng).map_err(|e| format!("{e:?}"))
 }
 
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
-fn new_puzzle(n: usize, state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+fn commit_new_puzzle(state: &Mutex<Session>, n: usize) -> Result<PuzzleView, String> {
     let next = fresh_puzzle(n)?;
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
     session.commit(next);
     Ok(PuzzleView::from(session.current()))
 }
 
+fn current_state(state: &Mutex<Session>) -> Result<PuzzleView, String> {
+    let session = state.lock().map_err(|e| format!("{e:?}"))?;
+    Ok(PuzzleView::from(session.current()))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn new_puzzle(n: usize, state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    commit_new_puzzle(&state, n)
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn get_state(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
-    let session = state.lock().map_err(|e| format!("{e:?}"))?;
-    Ok(PuzzleView::from(session.current()))
+    current_state(&state)
 }
 
 #[allow(clippy::too_many_lines)] // Per-OS submenu construction is the long part
@@ -175,16 +183,21 @@ fn apply_menu_action(session: &mut Session, id: &str) -> bool {
     }
 }
 
+fn dispatch_menu_action(state: &Mutex<Session>, id: &str) -> Option<PuzzleView> {
+    let mut session = state.lock().ok()?;
+    if apply_menu_action(&mut session, id) {
+        Some(PuzzleView::from(session.current()))
+    } else {
+        None
+    }
+}
+
 #[allow(clippy::needless_pass_by_value)] // on_menu_event requires by-value MenuEvent
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let Some(state) = app.try_state::<Mutex<Session>>() else {
         return;
     };
-    let Ok(mut session) = state.lock() else {
-        return;
-    };
-    if apply_menu_action(&mut session, event.id().as_ref()) {
-        let view = PuzzleView::from(session.current());
+    if let Some(view) = dispatch_menu_action(&state, event.id().as_ref()) {
         let _ = app.emit(PUZZLE_UPDATED_EVENT, view);
     }
 }
@@ -207,7 +220,11 @@ pub fn run() {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::panic, // tests intentionally panic to poison a Mutex
+    clippy::significant_drop_tightening // tests don't have lock-contention concerns
+)]
 mod tests {
     use super::*;
 
@@ -320,6 +337,67 @@ mod tests {
         );
 
         assert_eq!(current_n(&app), 3);
+    }
+
+    #[test]
+    fn commit_new_puzzle_replaces_session_current() {
+        let state = Mutex::new(Session::new(Puzzle::new(2).unwrap()));
+        let view = commit_new_puzzle(&state, 4).unwrap();
+        assert_eq!(view.n, 4);
+        let session = state.lock().unwrap();
+        assert_eq!(session.current().n(), 4);
+    }
+
+    #[test]
+    fn commit_new_puzzle_propagates_invalid_size_error() {
+        let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
+        assert!(commit_new_puzzle(&state, 0).is_err());
+        let session = state.lock().unwrap();
+        assert_eq!(session.current().n(), 3, "session unchanged on error");
+    }
+
+    #[test]
+    fn current_state_returns_a_view_of_the_current_puzzle() {
+        let state = Mutex::new(Session::new(Puzzle::new(5).unwrap()));
+        let view = current_state(&state).unwrap();
+        assert_eq!(view.n, 5);
+    }
+
+    #[test]
+    fn current_state_returns_err_when_lock_poisoned() {
+        let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = state.lock().unwrap();
+            panic!("intentional");
+        }));
+        assert!(state.is_poisoned());
+        assert!(current_state(&state).is_err());
+    }
+
+    #[test]
+    fn dispatch_menu_action_returns_view_for_undo() {
+        let mut s = Session::new(Puzzle::new(3).unwrap());
+        s.commit(Puzzle::new(4).unwrap());
+        let state = Mutex::new(s);
+
+        let view = dispatch_menu_action(&state, "undo").unwrap();
+        assert_eq!(view.n, 3);
+    }
+
+    #[test]
+    fn dispatch_menu_action_returns_none_for_unknown_id() {
+        let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
+        assert!(dispatch_menu_action(&state, "quit").is_none());
+    }
+
+    #[test]
+    fn dispatch_menu_action_returns_none_when_lock_poisoned() {
+        let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = state.lock().unwrap();
+            panic!("intentional");
+        }));
+        assert!(dispatch_menu_action(&state, "undo").is_none());
     }
 
     #[test]
