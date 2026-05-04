@@ -484,6 +484,50 @@ mod tests {
     }
 
     #[test]
+    fn undo_command_returns_view_after_session_change() {
+        let app = tauri::test::mock_app();
+        let mut session = Session::new(Puzzle::new(3).unwrap());
+        session.commit(Puzzle::new(4).unwrap());
+        app.manage(Mutex::new(session));
+
+        let view = undo(app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.n, 3);
+        assert_eq!(current_n(&app), 3);
+    }
+
+    #[test]
+    fn redo_command_returns_view_after_undo() {
+        let app = tauri::test::mock_app();
+        let mut session = Session::new(Puzzle::new(3).unwrap());
+        session.commit(Puzzle::new(4).unwrap());
+        session.undo();
+        app.manage(Mutex::new(session));
+
+        let view = redo(app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.n, 4);
+        assert_eq!(current_n(&app), 4);
+    }
+
+    #[test]
+    fn new_puzzle_command_replaces_session_and_returns_view() {
+        let app = tauri::test::mock_app();
+        app.manage(Mutex::new(Session::new(Puzzle::new(2).unwrap())));
+
+        let view = new_puzzle(5, app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.n, 5);
+        assert_eq!(current_n(&app), 5);
+    }
+
+    #[test]
+    fn get_state_command_returns_current_view() {
+        let app = tauri::test::mock_app();
+        app.manage(Mutex::new(Session::new(Puzzle::new(6).unwrap())));
+
+        let view = get_state(app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.n, 6);
+    }
+
+    #[test]
     fn handle_menu_event_no_op_when_state_missing() {
         let app = tauri::test::mock_app();
         let event = MenuEvent {
