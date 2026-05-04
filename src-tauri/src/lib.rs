@@ -4,7 +4,9 @@ mod view;
 use std::sync::Mutex;
 
 use kenken::{generate, Puzzle};
-use tauri::menu::{Menu, MenuBuilder, MenuEvent, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{
+    AboutMetadata, IsMenuItem, Menu, MenuEvent, MenuItemBuilder, PredefinedMenuItem, Submenu,
+};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use session::Session;
@@ -33,18 +35,131 @@ fn get_state(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
     Ok(PuzzleView::from(session.current()))
 }
 
+#[allow(clippy::too_many_lines)] // Per-OS submenu construction is the long part
 fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let pkg_info = app.package_info();
+    let config = app.config();
+    let about_metadata = AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config.bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+
     let undo = MenuItemBuilder::with_id("undo", "Undo")
         .accelerator("CmdOrCtrl+Z")
         .build(app)?;
     let redo = MenuItemBuilder::with_id("redo", "Redo")
         .accelerator("CmdOrCtrl+Shift+Z")
         .build(app)?;
-    let edit = SubmenuBuilder::new(app, "Edit")
-        .item(&undo)
-        .item(&redo)
-        .build()?;
-    MenuBuilder::new(app).item(&edit).build()
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &undo,
+            &redo,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+
+    let window_menu = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+
+    #[cfg(target_os = "macos")]
+    let help_menu = Submenu::with_items(app, "Help", true, &[])?;
+    #[cfg(not(target_os = "macos"))]
+    let help_menu = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[&PredefinedMenuItem::about(
+            app,
+            None,
+            Some(about_metadata.clone()),
+        )?],
+    )?;
+
+    #[cfg(target_os = "macos")]
+    let app_menu = Submenu::with_items(
+        app,
+        pkg_info.name.clone(),
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, Some(about_metadata.clone()))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    let file_menu: Option<Submenu<R>> = None;
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
+    let file_menu = {
+        #[cfg(target_os = "macos")]
+        let items: Vec<&dyn IsMenuItem<R>> = vec![&PredefinedMenuItem::close_window(app, None)?];
+        #[cfg(not(target_os = "macos"))]
+        let close = PredefinedMenuItem::close_window(app, None)?;
+        #[cfg(not(target_os = "macos"))]
+        let quit = PredefinedMenuItem::quit(app, None)?;
+        #[cfg(not(target_os = "macos"))]
+        let items: Vec<&dyn IsMenuItem<R>> = vec![&close, &quit];
+        Some(Submenu::with_items(app, "File", true, &items)?)
+    };
+
+    #[cfg(target_os = "macos")]
+    let view_menu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, None)?],
+    )?;
+
+    let mut items: Vec<&dyn IsMenuItem<R>> = Vec::new();
+    #[cfg(target_os = "macos")]
+    items.push(&app_menu);
+    if let Some(ref file_menu) = file_menu {
+        items.push(file_menu);
+    }
+    items.push(&edit);
+    #[cfg(target_os = "macos")]
+    items.push(&view_menu);
+    items.push(&window_menu);
+    items.push(&help_menu);
+
+    Menu::with_items(app, &items)
 }
 
 fn apply_menu_action(session: &mut Session, id: &str) -> bool {
@@ -145,11 +260,23 @@ mod tests {
     }
 
     #[test]
-    fn build_app_menu_constructs_edit_submenu() {
+    fn build_app_menu_includes_edit_submenu_with_custom_undo() {
         let app = tauri::test::mock_app();
         let menu = build_app_menu(app.handle()).unwrap();
         let items = menu.items().unwrap();
-        assert_eq!(items.len(), 1, "expected a single Edit submenu");
+        assert!(!items.is_empty());
+
+        let edit = items.iter().find_map(|i| match i {
+            tauri::menu::MenuItemKind::Submenu(s) if s.text().ok().as_deref() == Some("Edit") => {
+                Some(s.clone())
+            }
+            _ => None,
+        });
+        let edit_items = edit.unwrap().items().unwrap();
+        let has_custom_undo = edit_items.iter().any(
+            |i| matches!(i, tauri::menu::MenuItemKind::MenuItem(m) if m.id().as_ref() == "undo"),
+        );
+        assert!(has_custom_undo, "Edit submenu should contain custom Undo");
     }
 
     fn current_n(app: &tauri::App<tauri::test::MockRuntime>) -> usize {
