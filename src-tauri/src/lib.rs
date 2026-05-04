@@ -43,6 +43,30 @@ fn get_state(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
     current_state(&state)
 }
 
+fn apply_undo(state: &Mutex<Session>) -> Result<PuzzleView, String> {
+    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
+    session.undo();
+    Ok(PuzzleView::from(session.current()))
+}
+
+fn apply_redo(state: &Mutex<Session>) -> Result<PuzzleView, String> {
+    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
+    session.redo();
+    Ok(PuzzleView::from(session.current()))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn undo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    apply_undo(&state)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn redo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    apply_redo(&state)
+}
+
 #[allow(clippy::too_many_lines)] // Per-OS submenu construction is the long part
 fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let pkg_info = app.package_info();
@@ -214,7 +238,7 @@ pub fn run() {
         .manage(Mutex::new(session))
         .menu(build_app_menu)
         .on_menu_event(handle_menu_event)
-        .invoke_handler(tauri::generate_handler![new_puzzle, get_state])
+        .invoke_handler(tauri::generate_handler![new_puzzle, get_state, undo, redo])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -398,6 +422,65 @@ mod tests {
             panic!("intentional");
         }));
         assert!(dispatch_menu_action(&state, "undo").is_none());
+    }
+
+    #[test]
+    fn apply_undo_pops_undo_stack_and_returns_view() {
+        let mut s = Session::new(Puzzle::new(3).unwrap());
+        s.commit(Puzzle::new(4).unwrap());
+        let state = Mutex::new(s);
+
+        let view = apply_undo(&state).unwrap();
+        assert_eq!(view.n, 3);
+        assert_eq!(state.lock().unwrap().current().n(), 3);
+    }
+
+    #[test]
+    fn apply_undo_is_noop_when_undo_stack_empty() {
+        let state = Mutex::new(Session::new(Puzzle::new(5).unwrap()));
+        let view = apply_undo(&state).unwrap();
+        assert_eq!(view.n, 5);
+    }
+
+    #[test]
+    fn apply_undo_returns_err_when_lock_poisoned() {
+        let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = state.lock().unwrap();
+            panic!("intentional");
+        }));
+        assert!(state.is_poisoned());
+        assert!(apply_undo(&state).is_err());
+    }
+
+    #[test]
+    fn apply_redo_pops_redo_stack_and_returns_view() {
+        let mut s = Session::new(Puzzle::new(3).unwrap());
+        s.commit(Puzzle::new(4).unwrap());
+        s.undo();
+        let state = Mutex::new(s);
+
+        let view = apply_redo(&state).unwrap();
+        assert_eq!(view.n, 4);
+        assert_eq!(state.lock().unwrap().current().n(), 4);
+    }
+
+    #[test]
+    fn apply_redo_is_noop_when_redo_stack_empty() {
+        let state = Mutex::new(Session::new(Puzzle::new(5).unwrap()));
+        let view = apply_redo(&state).unwrap();
+        assert_eq!(view.n, 5);
+    }
+
+    #[test]
+    fn apply_redo_returns_err_when_lock_poisoned() {
+        let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = state.lock().unwrap();
+            panic!("intentional");
+        }));
+        assert!(state.is_poisoned());
+        assert!(apply_redo(&state).is_err());
     }
 
     #[test]

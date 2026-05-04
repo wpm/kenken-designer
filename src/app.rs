@@ -1,9 +1,13 @@
+use crate::cage_index::cage_at;
 use crate::grid::Grid;
-use leptos::ev::Event;
+use crate::navigation::{next_state, NavKey};
+use leptos::ev::{Event, KeyboardEvent};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos::web_sys;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
+use std::pin::Pin;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
 
@@ -68,26 +72,67 @@ fn listen_for_puzzle_updates(set_puzzle: WriteSignal<Option<PuzzleView>>) {
     cb.forget();
 }
 
+fn is_text_input_focused() -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Some(doc) = window.document() else {
+        return false;
+    };
+    let Some(element) = doc.active_element() else {
+        return false;
+    };
+    is_text_input_tag(&element.tag_name())
+}
+
+fn is_text_input_tag(tag: &str) -> bool {
+    matches!(
+        tag.to_ascii_uppercase().as_str(),
+        "INPUT" | "TEXTAREA" | "SELECT"
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KeyAction {
+    Undo,
+    Redo,
+    Navigate(NavKey),
+    Ignore,
+}
+
+fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> KeyAction {
+    if in_text_input {
+        return KeyAction::Ignore;
+    }
+    if modifier && key.eq_ignore_ascii_case("z") {
+        return if shift {
+            KeyAction::Redo
+        } else {
+            KeyAction::Undo
+        };
+    }
+    NavKey::from_key(key, shift).map_or(KeyAction::Ignore, KeyAction::Navigate)
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     let (puzzle, set_puzzle) = signal::<Option<PuzzleView>>(None);
+    let cursor = RwSignal::new((0_usize, 0_usize));
+    let active_cage = RwSignal::new(None::<usize>);
 
-    let refresh = move |fut: std::pin::Pin<Box<dyn Future<Output = Option<PuzzleView>>>>| {
-        spawn_local(async move {
-            if let Some(view) = fut.await {
-                set_puzzle.set(Some(view));
-            }
-        });
-    };
-
-    refresh(Box::pin(call("get_state", NoArgs {})));
+    refresh_from(set_puzzle, Box::pin(call("get_state", NoArgs {})));
     listen_for_puzzle_updates(set_puzzle);
 
     let on_size_change = move |ev: Event| {
         let Ok(n) = event_target_value(&ev).parse::<usize>() else {
             return;
         };
-        refresh(Box::pin(call("new_puzzle", NewPuzzleArgs { n })));
+        cursor.set((0, 0));
+        active_cage.set(None);
+        refresh_from(
+            set_puzzle,
+            Box::pin(call("new_puzzle", NewPuzzleArgs { n })),
+        );
     };
 
     let current_n = move || {
@@ -96,9 +141,25 @@ pub fn App() -> impl IntoView {
             .map_or_else(|| "4".to_string(), |v| v.n.to_string())
     };
 
+    let on_cell_click = Callback::new(move |(r, c): (usize, usize)| {
+        cursor.set((r, c));
+        let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+        active_cage.set(next_active);
+    });
+
+    install_keydown_handler(puzzle, set_puzzle, cursor, active_cage);
+
     view! {
         <main class="app-main">
-            {move || puzzle.get().map(|view| view! { <Grid view=view size=560 /> })}
+            {move || puzzle.get().map(|view| view! {
+                <Grid
+                    view=view
+                    size=560
+                    cursor=cursor.into()
+                    active_cage=active_cage.into()
+                    on_cell_click=on_cell_click
+                />
+            })}
             <div class="size-control">
                 <label>
                     "Size: "
@@ -115,5 +176,150 @@ pub fn App() -> impl IntoView {
                 </label>
             </div>
         </main>
+    }
+}
+
+fn install_keydown_handler(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    cursor: RwSignal<(usize, usize)>,
+    active_cage: RwSignal<Option<usize>>,
+) {
+    window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
+        let modifier = ev.meta_key() || ev.ctrl_key();
+        let action = dispatch_key(&ev.key(), ev.shift_key(), modifier, is_text_input_focused());
+        match action {
+            KeyAction::Ignore => {}
+            KeyAction::Undo => {
+                ev.prevent_default();
+                refresh_after("undo", set_puzzle);
+            }
+            KeyAction::Redo => {
+                ev.prevent_default();
+                refresh_after("redo", set_puzzle);
+            }
+            KeyAction::Navigate(nav_key) => {
+                ev.prevent_default();
+                if let Some((n, cages)) =
+                    puzzle.with_untracked(|opt| opt.as_ref().map(|v| (v.n, v.cages.clone())))
+                {
+                    let (next_cursor, next_active) = next_state(
+                        cursor.get_untracked(),
+                        active_cage.get_untracked(),
+                        n,
+                        &cages,
+                        nav_key,
+                    );
+                    cursor.set(next_cursor);
+                    active_cage.set(next_active);
+                }
+            }
+        }
+    });
+}
+
+fn refresh_after(cmd: &'static str, set_puzzle: WriteSignal<Option<PuzzleView>>) {
+    refresh_from(set_puzzle, Box::pin(call(cmd, NoArgs {})));
+}
+
+fn refresh_from(
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    fut: Pin<Box<dyn Future<Output = Option<PuzzleView>>>>,
+) {
+    spawn_local(async move {
+        if let Some(view) = fut.await {
+            set_puzzle.set(Some(view));
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_text_input_tag_matches_form_controls() {
+        assert!(is_text_input_tag("INPUT"));
+        assert!(is_text_input_tag("input"));
+        assert!(is_text_input_tag("Textarea"));
+        assert!(is_text_input_tag("SELECT"));
+    }
+
+    #[test]
+    fn is_text_input_tag_rejects_other_elements() {
+        assert!(!is_text_input_tag("DIV"));
+        assert!(!is_text_input_tag("BUTTON"));
+        assert!(!is_text_input_tag("svg"));
+        assert!(!is_text_input_tag(""));
+    }
+
+    #[test]
+    fn dispatch_key_returns_undo_for_modifier_z() {
+        assert_eq!(dispatch_key("z", false, true, false), KeyAction::Undo);
+        assert_eq!(dispatch_key("Z", false, true, false), KeyAction::Undo);
+    }
+
+    #[test]
+    fn dispatch_key_returns_redo_for_modifier_shift_z() {
+        assert_eq!(dispatch_key("z", true, true, false), KeyAction::Redo);
+        assert_eq!(dispatch_key("Z", true, true, false), KeyAction::Redo);
+    }
+
+    #[test]
+    fn dispatch_key_ignores_z_without_modifier() {
+        assert_eq!(dispatch_key("z", false, false, false), KeyAction::Ignore);
+        assert_eq!(dispatch_key("z", true, false, false), KeyAction::Ignore);
+    }
+
+    #[test]
+    fn dispatch_key_returns_navigate_for_arrow_keys() {
+        assert_eq!(
+            dispatch_key("ArrowUp", false, false, false),
+            KeyAction::Navigate(NavKey::ArrowUp)
+        );
+        assert_eq!(
+            dispatch_key("ArrowDown", false, false, false),
+            KeyAction::Navigate(NavKey::ArrowDown)
+        );
+        assert_eq!(
+            dispatch_key("ArrowLeft", false, false, false),
+            KeyAction::Navigate(NavKey::ArrowLeft)
+        );
+        assert_eq!(
+            dispatch_key("ArrowRight", false, false, false),
+            KeyAction::Navigate(NavKey::ArrowRight)
+        );
+    }
+
+    #[test]
+    fn dispatch_key_returns_navigate_for_tab_and_shift_tab() {
+        assert_eq!(
+            dispatch_key("Tab", false, false, false),
+            KeyAction::Navigate(NavKey::Tab)
+        );
+        assert_eq!(
+            dispatch_key("Tab", true, false, false),
+            KeyAction::Navigate(NavKey::ShiftTab)
+        );
+    }
+
+    #[test]
+    fn dispatch_key_ignores_when_text_input_focused() {
+        assert_eq!(dispatch_key("z", false, true, true), KeyAction::Ignore);
+        assert_eq!(
+            dispatch_key("ArrowUp", false, false, true),
+            KeyAction::Ignore
+        );
+        assert_eq!(dispatch_key("Tab", false, false, true), KeyAction::Ignore);
+    }
+
+    #[test]
+    fn dispatch_key_ignores_unrelated_keys() {
+        assert_eq!(dispatch_key("a", false, false, false), KeyAction::Ignore);
+        assert_eq!(
+            dispatch_key("Enter", false, false, false),
+            KeyAction::Ignore
+        );
+        assert_eq!(dispatch_key("", false, false, false), KeyAction::Ignore);
     }
 }
