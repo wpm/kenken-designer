@@ -1,4 +1,4 @@
-use kenken::{Error, Index, Puzzle};
+use kenken::Puzzle;
 
 pub struct Session {
     current: Puzzle,
@@ -7,12 +7,12 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(n: Index) -> Result<Self, Error> {
-        Ok(Self {
-            current: Puzzle::new(n)?,
+    pub const fn new(current: Puzzle) -> Self {
+        Self {
+            current,
             undo: Vec::new(),
             redo: Vec::new(),
-        })
+        }
     }
 
     pub const fn current(&self) -> &Puzzle {
@@ -54,9 +54,13 @@ impl Session {
 mod tests {
     use super::*;
 
+    fn fresh(n: usize) -> Puzzle {
+        Puzzle::new(n).unwrap()
+    }
+
     #[test]
     fn new_session_has_empty_stacks() {
-        let s = Session::new(4).unwrap();
+        let s = Session::new(fresh(4));
         assert_eq!(s.current().n(), 4);
         assert!(s.undo.is_empty());
         assert!(s.redo.is_empty());
@@ -64,9 +68,8 @@ mod tests {
 
     #[test]
     fn commit_pushes_previous_onto_undo_and_clears_redo() {
-        let mut s = Session::new(3).unwrap();
-        let p4 = Puzzle::new(4).unwrap();
-        s.commit(p4);
+        let mut s = Session::new(fresh(3));
+        s.commit(fresh(4));
         assert_eq!(s.current().n(), 4);
         assert_eq!(s.undo.len(), 1);
         assert_eq!(s.undo[0].n(), 3);
@@ -74,30 +77,29 @@ mod tests {
 
         s.undo();
         assert_eq!(s.redo.len(), 1);
-        let p5 = Puzzle::new(5).unwrap();
-        s.commit(p5);
+        s.commit(fresh(5));
         assert!(s.redo.is_empty());
     }
 
     #[test]
     fn undo_returns_false_when_empty() {
-        let mut s = Session::new(4).unwrap();
+        let mut s = Session::new(fresh(4));
         assert!(!s.undo());
         assert_eq!(s.current().n(), 4);
     }
 
     #[test]
     fn redo_returns_false_when_empty() {
-        let mut s = Session::new(4).unwrap();
+        let mut s = Session::new(fresh(4));
         assert!(!s.redo());
         assert_eq!(s.current().n(), 4);
     }
 
     #[test]
     fn undo_redo_roundtrip() {
-        let mut s = Session::new(3).unwrap();
-        s.commit(Puzzle::new(4).unwrap());
-        s.commit(Puzzle::new(5).unwrap());
+        let mut s = Session::new(fresh(3));
+        s.commit(fresh(4));
+        s.commit(fresh(5));
         assert_eq!(s.current().n(), 5);
 
         assert!(s.undo());
@@ -115,11 +117,11 @@ mod tests {
 
     #[test]
     fn replace_does_not_touch_stacks() {
-        let mut s = Session::new(3).unwrap();
-        s.commit(Puzzle::new(4).unwrap());
+        let mut s = Session::new(fresh(3));
+        s.commit(fresh(4));
         assert_eq!(s.undo.len(), 1);
 
-        s.replace(Puzzle::new(7).unwrap());
+        s.replace(fresh(7));
         assert_eq!(s.current().n(), 7);
         assert_eq!(s.undo.len(), 1);
         assert!(s.redo.is_empty());

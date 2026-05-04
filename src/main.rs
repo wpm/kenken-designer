@@ -1,4 +1,6 @@
 mod app;
+mod cage_colors;
+mod grid;
 mod theme;
 
 use app::App;

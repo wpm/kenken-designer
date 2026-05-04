@@ -1,14 +1,21 @@
+use crate::grid::Grid;
 use leptos::ev::Event;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
+
+const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
     async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"])]
+    fn listen(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> JsValue;
 }
 
 #[derive(Serialize)]
@@ -49,6 +56,18 @@ async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
     serde_wasm_bindgen::from_value(value).ok()
 }
 
+fn listen_for_puzzle_updates(set_puzzle: WriteSignal<Option<PuzzleView>>) {
+    let cb = Closure::<dyn FnMut(JsValue)>::new(move |event: JsValue| {
+        if let Ok(payload) = js_sys::Reflect::get(&event, &JsValue::from_str("payload")) {
+            if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(payload) {
+                set_puzzle.set(Some(view));
+            }
+        }
+    });
+    let _ = listen(PUZZLE_UPDATED_EVENT, &cb);
+    cb.forget();
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     let (puzzle, set_puzzle) = signal::<Option<PuzzleView>>(None);
@@ -62,20 +81,13 @@ pub fn App() -> impl IntoView {
     };
 
     refresh(Box::pin(call("get_state", NoArgs {})));
+    listen_for_puzzle_updates(set_puzzle);
 
     let on_size_change = move |ev: Event| {
         let Ok(n) = event_target_value(&ev).parse::<usize>() else {
             return;
         };
         refresh(Box::pin(call("new_puzzle", NewPuzzleArgs { n })));
-    };
-
-    let on_undo = move |_| refresh(Box::pin(call("undo", NoArgs {})));
-    let on_redo = move |_| refresh(Box::pin(call("redo", NoArgs {})));
-
-    let summary = move || match puzzle.get() {
-        Some(v) => format!("{}×{} with {} cages", v.n, v.n, v.cages.len()),
-        None => "loading…".to_string(),
     };
 
     let current_n = move || {
@@ -85,12 +97,13 @@ pub fn App() -> impl IntoView {
     };
 
     view! {
-        <header class="app-header">
-            <h1 class="app-title">"KenKen Designer"</h1>
-            <div class="app-controls">
+        <main class="app-main">
+            {move || puzzle.get().map(|view| view! { <Grid view=view size=560 /> })}
+            <div class="size-control">
                 <label>
                     "Size: "
                     <select on:change=on_size_change prop:value=current_n>
+                        <option value="2">"2"</option>
                         <option value="3">"3"</option>
                         <option value="4">"4"</option>
                         <option value="5">"5"</option>
@@ -100,12 +113,7 @@ pub fn App() -> impl IntoView {
                         <option value="9">"9"</option>
                     </select>
                 </label>
-                <button on:click=on_undo>"Undo"</button>
-                <button on:click=on_redo>"Redo"</button>
             </div>
-        </header>
-        <main class="app-main">
-            <div class="app-summary">{summary}</div>
         </main>
     }
 }

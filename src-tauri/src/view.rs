@@ -61,6 +61,64 @@ impl From<&Puzzle> for PuzzleView {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use kenken::{Cage, Cell, Polyomino};
+
+    #[test]
+    fn split_operation_maps_each_op_kind() {
+        assert!(matches!(
+            split_operation(Operation::Add(7)),
+            (OpKind::Add, 7)
+        ));
+        assert!(matches!(
+            split_operation(Operation::Subtract(3)),
+            (OpKind::Sub, 3)
+        ));
+        assert!(matches!(
+            split_operation(Operation::Multiply(12)),
+            (OpKind::Mul, 12)
+        ));
+        assert!(matches!(
+            split_operation(Operation::Divide(2)),
+            (OpKind::Div, 2)
+        ));
+        assert!(matches!(
+            split_operation(Operation::Given(4)),
+            (OpKind::Given, 4)
+        ));
+    }
+
+    #[test]
+    fn puzzle_with_cages_round_trips_into_view() {
+        let p = Puzzle::new(3).unwrap();
+        let cage_a = Cage::new(
+            3,
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]),
+            Operation::Add(3),
+        );
+        let cage_b = Cage::new(3, Polyomino::new(&[Cell::new(2, 2)]), Operation::Given(2));
+        let p = p.insert_cage(cage_a).unwrap().insert_cage(cage_b).unwrap();
+
+        let v = PuzzleView::from(&p);
+        assert_eq!(v.n, 3);
+        assert_eq!(v.cages.len(), 2);
+
+        let add_cage = v
+            .cages
+            .iter()
+            .find(|c| matches!(c.op, OpKind::Add))
+            .unwrap();
+        assert_eq!(add_cage.target, 3);
+        assert!(add_cage.cells.contains(&(0, 0)));
+        assert!(add_cage.cells.contains(&(0, 1)));
+
+        let given_cage = v
+            .cages
+            .iter()
+            .find(|c| matches!(c.op, OpKind::Given))
+            .unwrap();
+        assert_eq!(given_cage.target, 2);
+        assert_eq!(given_cage.cells, vec![(2, 2)]);
+    }
 
     #[test]
     fn empty_puzzle_has_no_cages_and_full_candidates() {
