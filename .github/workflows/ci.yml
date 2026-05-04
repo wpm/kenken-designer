@@ -15,8 +15,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Checkout kenken library
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          repository: wpm/KenKen
+          path: ../kenken
 
       - uses: dtolnay/rust-toolchain@stable
         with:
