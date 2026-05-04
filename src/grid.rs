@@ -15,6 +15,7 @@ const ACTIVE_FILL_OPACITY: &str = "0.16";
 const CURSOR_INSET: f64 = 1.5;
 const CURSOR_STROKE: &str = "2.5";
 
+#[derive(Clone, Copy)]
 struct Layout {
     n: usize,
     cell: f64,
@@ -116,19 +117,18 @@ pub fn Grid(
     let lines = render_gridlines(&layout, &cell_cage);
     let outer_size = layout.cell * usize_to_f64(n);
     let op_labels = render_op_labels(&view, &layout);
-    let cell = layout.cell;
     let cages = view.cages;
 
     let active_overlay = move || {
         active_cage
             .get()
-            .and_then(|idx| cages.get(idx).cloned())
-            .map(|cage| -> Vec<_> { active_cage_overlay_rects(&cage, cell, n) })
+            .and_then(|idx| cages.get(idx))
+            .map(|cage| -> Vec<_> { active_cage_overlay_rects(cage, layout) })
     };
 
-    let cursor_rect = move || cursor_rect_view(cursor.get(), cell, n);
+    let cursor_rect = move || cursor_rect_view(cursor.get(), layout);
 
-    let click_overlay = render_click_overlay(n, cell, on_cell_click);
+    let click_overlay = render_click_overlay(layout, on_cell_click);
 
     view! {
         <svg
@@ -158,21 +158,12 @@ pub fn Grid(
     }
 }
 
-fn cell_origin(r: usize, c: usize, cell: f64, n: usize) -> (f64, f64) {
-    let max = n.saturating_sub(1);
-    let r = r.min(max);
-    let c = c.min(max);
-    (
-        usize_to_f64(c).mul_add(cell, MARGIN),
-        usize_to_f64(r).mul_add(cell, MARGIN),
-    )
-}
-
-fn active_cage_overlay_rects(cage: &CageView, cell: f64, n: usize) -> Vec<impl IntoView> {
+fn active_cage_overlay_rects(cage: &CageView, layout: Layout) -> Vec<impl IntoView> {
+    let cell = layout.cell;
     cage.cells
         .iter()
         .map(|&(r, c)| {
-            let (x, y) = cell_origin(r, c, cell, n);
+            let (x, y) = layout.origin(r, c);
             view! {
                 <rect
                     x=x
@@ -188,9 +179,9 @@ fn active_cage_overlay_rects(cage: &CageView, cell: f64, n: usize) -> Vec<impl I
         .collect()
 }
 
-fn cursor_rect_view(cursor: (usize, usize), cell: f64, n: usize) -> impl IntoView {
-    let (x, y) = cell_origin(cursor.0, cursor.1, cell, n);
-    let side = 2.0_f64.mul_add(-CURSOR_INSET, cell).max(0.0);
+fn cursor_rect_view(cursor: (usize, usize), layout: Layout) -> impl IntoView {
+    let (x, y) = layout.origin(cursor.0, cursor.1);
+    let side = 2.0_f64.mul_add(-CURSOR_INSET, layout.cell).max(0.0);
     view! {
         <rect
             x=x + CURSOR_INSET
@@ -206,14 +197,15 @@ fn cursor_rect_view(cursor: (usize, usize), cell: f64, n: usize) -> impl IntoVie
 }
 
 fn render_click_overlay(
-    n: usize,
-    cell: f64,
+    layout: Layout,
     on_cell_click: Callback<(usize, usize)>,
 ) -> Vec<impl IntoView> {
+    let n = layout.n;
+    let cell = layout.cell;
     (0..n)
         .flat_map(|r| (0..n).map(move |c| (r, c)))
         .map(|(r, c)| {
-            let (x, y) = cell_origin(r, c, cell, n);
+            let (x, y) = layout.origin(r, c);
             view! {
                 <rect
                     x=x

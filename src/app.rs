@@ -142,9 +142,13 @@ pub fn App() -> impl IntoView {
     };
 
     let on_cell_click = Callback::new(move |(r, c): (usize, usize)| {
-        cursor.set((r, c));
+        if cursor.get_untracked() != (r, c) {
+            cursor.set((r, c));
+        }
         let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
-        active_cage.set(next_active);
+        if active_cage.get_untracked() != next_active {
+            active_cage.set(next_active);
+        }
     });
 
     install_keydown_handler(puzzle, set_puzzle, cursor, active_cage);
@@ -200,18 +204,24 @@ fn install_keydown_handler(
             }
             KeyAction::Navigate(nav_key) => {
                 ev.prevent_default();
-                if let Some((n, cages)) =
-                    puzzle.with_untracked(|opt| opt.as_ref().map(|v| (v.n, v.cages.clone())))
-                {
-                    let (next_cursor, next_active) = next_state(
-                        cursor.get_untracked(),
-                        active_cage.get_untracked(),
-                        n,
-                        &cages,
-                        nav_key,
-                    );
-                    cursor.set(next_cursor);
-                    active_cage.set(next_active);
+                let next = puzzle.with_untracked(|opt| {
+                    opt.as_ref().map(|v| {
+                        next_state(
+                            cursor.get_untracked(),
+                            active_cage.get_untracked(),
+                            v.n,
+                            &v.cages,
+                            nav_key,
+                        )
+                    })
+                });
+                if let Some((next_cursor, next_active)) = next {
+                    if cursor.get_untracked() != next_cursor {
+                        cursor.set(next_cursor);
+                    }
+                    if active_cage.get_untracked() != next_active {
+                        active_cage.set(next_active);
+                    }
                 }
             }
         }
