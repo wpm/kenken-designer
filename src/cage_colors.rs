@@ -49,14 +49,16 @@ pub fn assign_cage_colors(view: &PuzzleView, palette_size: usize) -> Vec<usize> 
 
     let mut colors: Vec<Option<usize>> = vec![None; cage_count];
     for &i in &order {
-        let mut used = BTreeSet::new();
+        let mut used: u64 = 0;
         for &neighbor in &adjacency[i] {
             if let Some(c) = colors[neighbor] {
-                used.insert(c);
+                if c < u64::BITS as usize {
+                    used |= 1_u64 << c;
+                }
             }
         }
         let mut color = 0_usize;
-        while used.contains(&color) {
+        while color < u64::BITS as usize && used & (1_u64 << color) != 0 {
             color += 1;
         }
         colors[i] = Some(color % modulus);

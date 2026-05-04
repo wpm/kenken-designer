@@ -60,3 +60,21 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fresh_puzzle_returns_ok_for_valid_size() {
+        let p = fresh_puzzle(4).unwrap();
+        assert_eq!(p.n(), 4);
+    }
+
+    #[test]
+    fn fresh_puzzle_returns_err_for_invalid_size() {
+        assert!(fresh_puzzle(0).is_err());
+        assert!(fresh_puzzle(99).is_err());
+    }
+}
