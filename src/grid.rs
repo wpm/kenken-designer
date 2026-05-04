@@ -1,6 +1,7 @@
 use crate::app::{CageView, OpKind, PuzzleView};
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
-use crate::theme::{BG, CAGE_PALETTE, INK, INK3, LINE, SERIF_FONT};
+use crate::cage_index::cage_anchor;
+use crate::theme::{ACCENT, BG, CAGE_PALETTE, INK, INK3, LINE, SERIF_FONT};
 use leptos::prelude::*;
 
 const MARGIN: f64 = 14.0;
@@ -10,7 +11,11 @@ const THIN_STROKE: f64 = 0.5;
 const OP_HALO_STROKE: f64 = 2.5;
 const OP_INSET: f64 = 4.0;
 const UNCAGED_FILL: &str = "#fefcf7";
+const ACTIVE_FILL_OPACITY: &str = "0.16";
+const CURSOR_INSET: f64 = 1.5;
+const CURSOR_STROKE: &str = "2.5";
 
+#[derive(Clone, Copy)]
 struct Layout {
     n: usize,
     cell: f64,
@@ -93,7 +98,13 @@ enum Axis {
 
 #[component]
 #[allow(clippy::needless_pass_by_value)]
-pub fn Grid(view: PuzzleView, size: u32) -> impl IntoView {
+pub fn Grid(
+    view: PuzzleView,
+    size: u32,
+    cursor: Signal<(usize, usize)>,
+    active_cage: Signal<Option<usize>>,
+    on_cell_click: Callback<(usize, usize)>,
+) -> impl IntoView {
     let n = view.n;
     debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
 
@@ -106,6 +117,18 @@ pub fn Grid(view: PuzzleView, size: u32) -> impl IntoView {
     let lines = render_gridlines(&layout, &cell_cage);
     let outer_size = layout.cell * usize_to_f64(n);
     let op_labels = render_op_labels(&view, &layout);
+    let cages = view.cages;
+
+    let active_overlay = move || {
+        active_cage
+            .get()
+            .and_then(|idx| cages.get(idx))
+            .map(|cage| -> Vec<_> { active_cage_overlay_rects(cage, layout) })
+    };
+
+    let cursor_rect = move || cursor_rect_view(cursor.get(), layout);
+
+    let click_overlay = render_click_overlay(layout, on_cell_click);
 
     view! {
         <svg
@@ -128,8 +151,77 @@ pub fn Grid(view: PuzzleView, size: u32) -> impl IntoView {
                 stroke-width=OUTER_STROKE
             />
             {op_labels}
+            {active_overlay}
+            {cursor_rect}
+            {click_overlay}
         </svg>
     }
+}
+
+fn active_cage_overlay_rects(cage: &CageView, layout: Layout) -> Vec<impl IntoView> {
+    let cell = layout.cell;
+    cage.cells
+        .iter()
+        .map(|&(r, c)| {
+            let (x, y) = layout.origin(r, c);
+            view! {
+                <rect
+                    x=x
+                    y=y
+                    width=cell
+                    height=cell
+                    fill=ACCENT
+                    fill-opacity=ACTIVE_FILL_OPACITY
+                    pointer-events="none"
+                />
+            }
+        })
+        .collect()
+}
+
+fn cursor_rect_view(cursor: (usize, usize), layout: Layout) -> impl IntoView {
+    let (x, y) = layout.origin(cursor.0, cursor.1);
+    let side = 2.0_f64.mul_add(-CURSOR_INSET, layout.cell).max(0.0);
+    view! {
+        <rect
+            x=x + CURSOR_INSET
+            y=y + CURSOR_INSET
+            width=side
+            height=side
+            fill="none"
+            stroke=ACCENT
+            stroke-width=CURSOR_STROKE
+            pointer-events="none"
+        />
+    }
+}
+
+fn render_click_overlay(
+    layout: Layout,
+    on_cell_click: Callback<(usize, usize)>,
+) -> Vec<impl IntoView> {
+    let n = layout.n;
+    let cell = layout.cell;
+    (0..n)
+        .flat_map(|r| (0..n).map(move |c| (r, c)))
+        .map(|(r, c)| {
+            let (x, y) = layout.origin(r, c);
+            view! {
+                <rect
+                    x=x
+                    y=y
+                    width=cell
+                    height=cell
+                    fill="transparent"
+                    on:mousedown=move |ev: leptos::ev::MouseEvent| {
+                        if ev.button() == 0 {
+                            on_cell_click.run((r, c));
+                        }
+                    }
+                />
+            }
+        })
+        .collect()
 }
 
 fn render_cells(
@@ -263,7 +355,7 @@ fn render_op_labels(view: &PuzzleView, layout: &Layout) -> Vec<impl IntoView> {
     view.cages
         .iter()
         .map(|cage| {
-            let (r, c) = anchor(cage);
+            let (r, c) = cage_anchor(cage);
             let (cell_x, cell_y) = layout.origin(r, c);
             let label_x = cell_x + OP_INSET;
             let label_y = cell_y + OP_INSET;
@@ -292,14 +384,6 @@ fn render_op_labels(view: &PuzzleView, layout: &Layout) -> Vec<impl IntoView> {
 
 const fn is_thick_border(a: Option<usize>, b: Option<usize>) -> bool {
     matches!((a, b), (Some(x), Some(y)) if x != y)
-}
-
-fn anchor(cage: &CageView) -> (usize, usize) {
-    cage.cells
-        .iter()
-        .min_by_key(|&&(r, c)| (r, c))
-        .copied()
-        .unwrap_or((0, 0))
 }
 
 fn op_label(op: OpKind, target: u32) -> String {
