@@ -258,6 +258,11 @@ mod tests {
         assert_eq!(s.current().n(), 3);
     }
 
+    // muda enforces "main thread only" for menu construction on macOS, but cargo's test
+    // harness runs each test on a worker thread, so this test can only be exercised on
+    // Linux and Windows. The macOS branch of build_app_menu is still compile-checked there
+    // and exercised at runtime when the app launches.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn build_app_menu_includes_edit_submenu_with_custom_undo() {
         let app = tauri::test::mock_app();
