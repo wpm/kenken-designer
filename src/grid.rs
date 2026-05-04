@@ -58,10 +58,7 @@ impl Layout {
 #[allow(clippy::needless_pass_by_value)]
 pub fn Grid(view: PuzzleView, size: u32) -> impl IntoView {
     let n = view.n;
-    if n == 0 {
-        return view! { <svg width=size height=size viewBox=format!("0 0 {size} {size}")></svg> }
-            .into_any();
-    }
+    debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
 
     let layout = Layout::new(n, size);
     let palette_idx = assign_cage_colors(&view, CAGE_PALETTE.len());
@@ -96,7 +93,6 @@ pub fn Grid(view: PuzzleView, size: u32) -> impl IntoView {
             {op_labels}
         </svg>
     }
-    .into_any()
 }
 
 fn render_cells(
@@ -175,14 +171,9 @@ fn render_gridlines(layout: &Layout, cell_cage: &[Vec<Option<usize>>]) -> Vec<im
     let n = layout.n;
     let cell = layout.cell;
     let mut lines = Vec::new();
-    for r in 0..n.saturating_sub(1) {
-        for (c, _) in cell_cage[r].iter().enumerate() {
-            let thick = is_thick_border(cell_cage[r][c], cell_cage[r + 1][c]);
-            let (stroke, width) = if thick {
-                (INK, THICK_STROKE)
-            } else {
-                (LINE, THIN_STROKE)
-            };
+    for (r, pair) in cell_cage.windows(2).enumerate() {
+        for (c, (&top, &bot)) in pair[0].iter().zip(pair[1].iter()).enumerate() {
+            let (stroke, width) = stroke_for(is_thick_border(top, bot));
             let x1 = usize_to_f64(c).mul_add(cell, MARGIN);
             let x2 = x1 + cell;
             let y = usize_to_f64(r + 1).mul_add(cell, MARGIN);
@@ -193,12 +184,7 @@ fn render_gridlines(layout: &Layout, cell_cage: &[Vec<Option<usize>>]) -> Vec<im
     }
     for c in 0..n.saturating_sub(1) {
         for (r, row) in cell_cage.iter().enumerate() {
-            let thick = is_thick_border(row[c], row[c + 1]);
-            let (stroke, width) = if thick {
-                (INK, THICK_STROKE)
-            } else {
-                (LINE, THIN_STROKE)
-            };
+            let (stroke, width) = stroke_for(is_thick_border(row[c], row[c + 1]));
             let y1 = usize_to_f64(r).mul_add(cell, MARGIN);
             let y2 = y1 + cell;
             let x = usize_to_f64(c + 1).mul_add(cell, MARGIN);
@@ -208,6 +194,14 @@ fn render_gridlines(layout: &Layout, cell_cage: &[Vec<Option<usize>>]) -> Vec<im
         }
     }
     lines
+}
+
+const fn stroke_for(thick: bool) -> (&'static str, f64) {
+    if thick {
+        (INK, THICK_STROKE)
+    } else {
+        (LINE, THIN_STROKE)
+    }
 }
 
 fn render_op_labels(view: &PuzzleView, layout: &Layout) -> Vec<impl IntoView> {

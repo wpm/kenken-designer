@@ -52,8 +52,7 @@ fn redo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
-    let mut rng = rand::rng();
-    let initial = generate(4, &mut rng).expect("4 is a valid grid size");
+    let initial = fresh_puzzle(4).expect("4 is a valid grid size");
     let session = Session::new(initial);
     tauri::Builder::default()
         .manage(Mutex::new(session))
