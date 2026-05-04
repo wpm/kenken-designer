@@ -1,3 +1,4 @@
+use crate::grid::Grid;
 use leptos::ev::Event;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -106,6 +107,7 @@ pub fn App() -> impl IntoView {
         </header>
         <main class="app-main">
             <div class="app-summary">{summary}</div>
+            {move || puzzle.get().map(|view| view! { <Grid view=view size=560 /> })}
         </main>
     }
 }

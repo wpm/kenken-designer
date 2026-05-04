@@ -1,0 +1,281 @@
+use crate::app::{CageView, OpKind, PuzzleView};
+use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
+use crate::theme::{BG, CAGE_PALETTE, INK, INK3, LINE, SERIF_FONT};
+use leptos::prelude::*;
+
+const MARGIN: f64 = 14.0;
+const OUTER_STROKE: f64 = 2.6;
+const THICK_STROKE: f64 = 2.2;
+const THIN_STROKE: f64 = 0.5;
+const OP_HALO_STROKE: f64 = 2.5;
+const OP_INSET: f64 = 4.0;
+const UNCAGED_FILL: &str = "#fefcf7";
+
+struct Layout {
+    n: usize,
+    cell: f64,
+    cols: usize,
+    sub_w: f64,
+    sub_h: f64,
+    candidate_font: f64,
+    singleton_font: f64,
+    op_font: f64,
+}
+
+impl Layout {
+    fn new(n: usize, size: u32) -> Self {
+        let n_f = usize_to_f64(n);
+        let size_f = f64::from(size);
+        let cell = MARGIN.mul_add(-2.0, size_f) / n_f.max(1.0);
+        let cols = ceil_sqrt(n).max(1);
+        let rows = n.div_ceil(cols).max(1);
+        let sub_w = cell / usize_to_f64(cols);
+        let sub_h = cell / usize_to_f64(rows);
+        let candidate_font = (sub_w.min(sub_h) * 0.38).max(6.0);
+        let singleton_font = cell * 0.5;
+        let op_font = (cell * 0.16).max(10.0);
+        Self {
+            n,
+            cell,
+            cols,
+            sub_w,
+            sub_h,
+            candidate_font,
+            singleton_font,
+            op_font,
+        }
+    }
+
+    const fn origin(&self, r: usize, c: usize) -> (f64, f64) {
+        (
+            usize_to_f64(c).mul_add(self.cell, MARGIN),
+            usize_to_f64(r).mul_add(self.cell, MARGIN),
+        )
+    }
+}
+
+#[component]
+#[allow(clippy::needless_pass_by_value)]
+pub fn Grid(view: PuzzleView, size: u32) -> impl IntoView {
+    let n = view.n;
+    if n == 0 {
+        return view! { <svg width=size height=size viewBox=format!("0 0 {size} {size}")></svg> }
+            .into_any();
+    }
+
+    let layout = Layout::new(n, size);
+    let palette_idx = assign_cage_colors(&view, CAGE_PALETTE.len());
+    let cell_cage = build_cell_cage_map(&view);
+
+    let cells_view = render_cells(&layout, &cell_cage, &palette_idx);
+    let texts_view = render_texts(&view, &layout);
+    let lines = render_gridlines(&layout, &cell_cage);
+    let outer_size = layout.cell * usize_to_f64(n);
+    let op_labels = render_op_labels(&view, &layout);
+
+    view! {
+        <svg
+            width=size
+            height=size
+            viewBox=format!("0 0 {size} {size}")
+            xmlns="http://www.w3.org/2000/svg"
+        >
+            <rect x="0" y="0" width=size height=size fill=BG />
+            {cells_view}
+            {texts_view}
+            {lines}
+            <rect
+                x=MARGIN
+                y=MARGIN
+                width=outer_size
+                height=outer_size
+                fill="none"
+                stroke=INK
+                stroke-width=OUTER_STROKE
+            />
+            {op_labels}
+        </svg>
+    }
+    .into_any()
+}
+
+fn render_cells(
+    layout: &Layout,
+    cell_cage: &[Vec<Option<usize>>],
+    palette_idx: &[usize],
+) -> Vec<impl IntoView> {
+    let n = layout.n;
+    let cell = layout.cell;
+    (0..n)
+        .flat_map(|r| (0..n).map(move |c| (r, c)))
+        .map(|(r, c)| {
+            let fill = cell_cage[r][c].map_or(UNCAGED_FILL, |i| {
+                CAGE_PALETTE[palette_idx[i] % CAGE_PALETTE.len()]
+            });
+            let (x, y) = layout.origin(r, c);
+            view! { <rect x=x y=y width=cell height=cell fill=fill /> }
+        })
+        .collect()
+}
+
+fn render_texts(view: &PuzzleView, layout: &Layout) -> Vec<impl IntoView> {
+    let n = layout.n;
+    let cell = layout.cell;
+    let cols = layout.cols;
+    let sub_w = layout.sub_w;
+    let sub_h = layout.sub_h;
+    let candidate_font = layout.candidate_font;
+    let singleton_font = layout.singleton_font;
+    let mut out = Vec::new();
+    for r in 0..n {
+        for c in 0..n {
+            let cell_data = &view.cells[r][c];
+            let (cell_x, cell_y) = layout.origin(r, c);
+            let singleton = cell_data.len() == 1;
+            for &v in cell_data {
+                let (cx, cy, fs, fill, opacity, weight) = if singleton {
+                    (
+                        cell_x + cell / 2.0,
+                        cell_y + cell / 2.0,
+                        singleton_font,
+                        INK,
+                        "1",
+                        "600",
+                    )
+                } else {
+                    let idx = usize::from(v.saturating_sub(1));
+                    let sub_r = idx / cols;
+                    let sub_c = idx % cols;
+                    let cx = usize_to_f64(sub_c).mul_add(sub_w, cell_x) + sub_w / 2.0;
+                    let cy = usize_to_f64(sub_r).mul_add(sub_h, cell_y) + sub_h / 2.0;
+                    (cx, cy, candidate_font, INK3, "0.65", "400")
+                };
+                out.push(view! {
+                    <text
+                        x=cx
+                        y=cy
+                        text-anchor="middle"
+                        dominant-baseline="central"
+                        font-family=SERIF_FONT
+                        font-size=fs
+                        fill=fill
+                        opacity=opacity
+                        font-weight=weight
+                    >
+                        {v.to_string()}
+                    </text>
+                });
+            }
+        }
+    }
+    out
+}
+
+fn render_gridlines(layout: &Layout, cell_cage: &[Vec<Option<usize>>]) -> Vec<impl IntoView> {
+    let n = layout.n;
+    let cell = layout.cell;
+    let mut lines = Vec::new();
+    for r in 0..n.saturating_sub(1) {
+        for (c, _) in cell_cage[r].iter().enumerate() {
+            let thick = is_thick_border(cell_cage[r][c], cell_cage[r + 1][c]);
+            let (stroke, width) = if thick {
+                (INK, THICK_STROKE)
+            } else {
+                (LINE, THIN_STROKE)
+            };
+            let x1 = usize_to_f64(c).mul_add(cell, MARGIN);
+            let x2 = x1 + cell;
+            let y = usize_to_f64(r + 1).mul_add(cell, MARGIN);
+            lines.push(view! {
+                <line x1=x1 y1=y x2=x2 y2=y stroke=stroke stroke-width=width stroke-linecap="round" />
+            });
+        }
+    }
+    for c in 0..n.saturating_sub(1) {
+        for (r, row) in cell_cage.iter().enumerate() {
+            let thick = is_thick_border(row[c], row[c + 1]);
+            let (stroke, width) = if thick {
+                (INK, THICK_STROKE)
+            } else {
+                (LINE, THIN_STROKE)
+            };
+            let y1 = usize_to_f64(r).mul_add(cell, MARGIN);
+            let y2 = y1 + cell;
+            let x = usize_to_f64(c + 1).mul_add(cell, MARGIN);
+            lines.push(view! {
+                <line x1=x y1=y1 x2=x y2=y2 stroke=stroke stroke-width=width stroke-linecap="round" />
+            });
+        }
+    }
+    lines
+}
+
+fn render_op_labels(view: &PuzzleView, layout: &Layout) -> Vec<impl IntoView> {
+    let op_font = layout.op_font;
+    view.cages
+        .iter()
+        .map(|cage| {
+            let (r, c) = anchor(cage);
+            let (cell_x, cell_y) = layout.origin(r, c);
+            let label_x = cell_x + OP_INSET;
+            let label_y = cell_y + OP_INSET;
+            let label = op_label(cage.op, cage.target);
+            view! {
+                <text
+                    x=label_x
+                    y=label_y
+                    text-anchor="start"
+                    dominant-baseline="hanging"
+                    font-family=SERIF_FONT
+                    font-size=op_font
+                    font-weight="700"
+                    fill=INK
+                    stroke="white"
+                    stroke-width=OP_HALO_STROKE
+                    stroke-linejoin="round"
+                    paint-order="stroke"
+                >
+                    {label}
+                </text>
+            }
+        })
+        .collect()
+}
+
+const fn is_thick_border(a: Option<usize>, b: Option<usize>) -> bool {
+    matches!((a, b), (Some(x), Some(y)) if x != y)
+}
+
+fn anchor(cage: &CageView) -> (usize, usize) {
+    cage.cells
+        .iter()
+        .min_by_key(|&&(r, c)| (r, c))
+        .copied()
+        .unwrap_or((0, 0))
+}
+
+fn op_label(op: OpKind, target: u32) -> String {
+    match op {
+        OpKind::Add => format!("+{target}"),
+        OpKind::Sub => format!("{target}\u{2212}"),
+        OpKind::Mul => format!("{target}\u{00d7}"),
+        OpKind::Div => format!("{target}\u{00f7}"),
+        OpKind::Given => format!("{target}"),
+    }
+}
+
+const fn ceil_sqrt(n: usize) -> usize {
+    if n <= 1 {
+        return n;
+    }
+    let mut x: usize = 1;
+    while x.saturating_mul(x) < n {
+        x += 1;
+    }
+    x
+}
+
+#[allow(clippy::cast_precision_loss)]
+const fn usize_to_f64(x: usize) -> f64 {
+    x as f64
+}

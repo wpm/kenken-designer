@@ -3,16 +3,21 @@ mod view;
 
 use std::sync::Mutex;
 
-use kenken::Puzzle;
+use kenken::{generate, Puzzle};
 use tauri::State;
 
 use session::Session;
 use view::PuzzleView;
 
+fn fresh_puzzle(n: usize) -> Result<Puzzle, String> {
+    let mut rng = rand::rng();
+    generate(n, &mut rng).map_err(|e| format!("{e:?}"))
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn new_puzzle(n: usize, state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
-    let next = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
+    let next = fresh_puzzle(n)?;
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
     session.commit(next);
     Ok(PuzzleView::from(session.current()))
@@ -47,7 +52,9 @@ fn redo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
-    let session = Session::new(4).expect("4 is a valid grid size");
+    let mut rng = rand::rng();
+    let initial = generate(4, &mut rng).expect("4 is a valid grid size");
+    let session = Session::new(initial);
     tauri::Builder::default()
         .manage(Mutex::new(session))
         .invoke_handler(tauri::generate_handler![new_puzzle, get_state, undo, redo])
