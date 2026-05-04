@@ -77,8 +77,16 @@ a:hover {
   gap: 1.25rem;
   padding: 2rem 1.5rem;
   min-height: 100vh;
+  box-sizing: border-box;
   font-family: "Inter", system-ui, sans-serif;
   color: var(--paper-ink-2);
+}
+
+.grid-svg {
+  display: block;
+  width: min(calc(100vw - 3rem), calc(100vh - 8.25rem));
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .size-control {

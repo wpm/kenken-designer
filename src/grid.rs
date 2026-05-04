@@ -109,9 +109,9 @@ pub fn Grid(view: PuzzleView, size: u32) -> impl IntoView {
 
     view! {
         <svg
-            width=size
-            height=size
+            class="grid-svg"
             viewBox=format!("0 0 {size} {size}")
+            preserveAspectRatio="xMidYMid meet"
             xmlns="http://www.w3.org/2000/svg"
         >
             <rect x="0" y="0" width=size height=size fill=BG />
