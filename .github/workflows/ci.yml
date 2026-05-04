@@ -76,6 +76,12 @@ jobs:
       - name: Test (Tauri backend)
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
 
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: wpm/kenken-designer
+
       - name: Doc
         run: |
           cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --all-features
