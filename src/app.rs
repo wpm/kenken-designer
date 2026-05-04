@@ -85,11 +85,10 @@ fn is_text_input_focused() -> bool {
     is_text_input_tag(&element.tag_name())
 }
 
-fn is_text_input_tag(tag: &str) -> bool {
-    matches!(
-        tag.to_ascii_uppercase().as_str(),
-        "INPUT" | "TEXTAREA" | "SELECT"
-    )
+const fn is_text_input_tag(tag: &str) -> bool {
+    tag.as_bytes().eq_ignore_ascii_case(b"INPUT")
+        || tag.as_bytes().eq_ignore_ascii_case(b"TEXTAREA")
+        || tag.as_bytes().eq_ignore_ascii_case(b"SELECT")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -196,11 +195,11 @@ fn install_keydown_handler(
             KeyAction::Ignore => {}
             KeyAction::Undo => {
                 ev.prevent_default();
-                refresh_after("undo", set_puzzle);
+                refresh_from(set_puzzle, Box::pin(call("undo", NoArgs {})));
             }
             KeyAction::Redo => {
                 ev.prevent_default();
-                refresh_after("redo", set_puzzle);
+                refresh_from(set_puzzle, Box::pin(call("redo", NoArgs {})));
             }
             KeyAction::Navigate(nav_key) => {
                 ev.prevent_default();
@@ -226,10 +225,6 @@ fn install_keydown_handler(
             }
         }
     });
-}
-
-fn refresh_after(cmd: &'static str, set_puzzle: WriteSignal<Option<PuzzleView>>) {
-    refresh_from(set_puzzle, Box::pin(call(cmd, NoArgs {})));
 }
 
 fn refresh_from(

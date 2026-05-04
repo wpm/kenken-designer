@@ -44,16 +44,18 @@ pub fn next_state(
             if cages.is_empty() {
                 return (cursor, active_cage);
             }
-            let len = cages.len();
-            let next_idx = match (active_cage, key) {
-                (None, NavKey::Tab) => 0,
-                (None, NavKey::ShiftTab) => len - 1,
-                (Some(i), NavKey::Tab) => (i + 1) % len,
-                (Some(i), NavKey::ShiftTab) => (i + len - 1) % len,
-                _ => unreachable!("filtered by outer match"),
-            };
+            let next_idx = cycle_cage_idx(active_cage, cages.len(), matches!(key, NavKey::Tab));
             (cage_anchor(&cages[next_idx]), Some(next_idx))
         }
+    }
+}
+
+const fn cycle_cage_idx(active: Option<usize>, len: usize, forward: bool) -> usize {
+    match (active, forward) {
+        (None, true) => 0,
+        (None, false) => len - 1,
+        (Some(i), true) => (i + 1) % len,
+        (Some(i), false) => (i + len - 1) % len,
     }
 }
 

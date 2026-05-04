@@ -79,12 +79,10 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ..Default::default()
     };
 
-    let undo = MenuItemBuilder::with_id("undo", "Undo")
-        .accelerator("CmdOrCtrl+Z")
-        .build(app)?;
-    let redo = MenuItemBuilder::with_id("redo", "Redo")
-        .accelerator("CmdOrCtrl+Shift+Z")
-        .build(app)?;
+    // Accelerators live in the WASM keydown handler (see src/app.rs), not on
+    // the menu items, so Cmd/Ctrl+Z fires exactly once regardless of platform.
+    let undo = MenuItemBuilder::with_id("undo", "Undo").build(app)?;
+    let redo = MenuItemBuilder::with_id("redo", "Redo").build(app)?;
     let edit = Submenu::with_items(
         app,
         "Edit",
