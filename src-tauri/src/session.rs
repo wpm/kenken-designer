@@ -71,7 +71,6 @@ mod tests {
         assert_eq!(s.undo[0].n(), 3);
         assert!(s.redo.is_empty());
 
-        // simulate a redo entry, then commit clears it
         s.undo();
         assert_eq!(s.redo.len(), 1);
         let p5 = Puzzle::new(5).unwrap();

@@ -1,4 +1,4 @@
-use kenken::{Cell, Operation, Puzzle};
+use kenken::{Operation, Puzzle};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct PuzzleView {
@@ -36,17 +36,10 @@ fn split_operation(op: Operation) -> (OpKind, u32) {
 impl From<&Puzzle> for PuzzleView {
     fn from(p: &Puzzle) -> Self {
         let n = p.n();
-        let cells = (0..n)
-            .map(|row| {
-                (0..n)
-                    .map(|col| {
-                        p.candidates(Cell::new(row, col))
-                            .map(|v| v.iter().collect())
-                            .unwrap_or_default()
-                    })
-                    .collect()
-            })
-            .collect();
+        let mut cells = vec![vec![Vec::new(); n]; n];
+        for (cell, values) in p.grid().iter_with_values() {
+            cells[cell.row][cell.column] = values.iter().collect();
+        }
 
         let cages = p
             .cages()

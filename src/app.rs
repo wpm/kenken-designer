@@ -2,9 +2,8 @@ use leptos::ev::Event;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 use wasm_bindgen::prelude::*;
-
-use crate::theme;
 
 #[wasm_bindgen]
 extern "C" {
@@ -43,124 +42,70 @@ pub enum OpKind {
     Given,
 }
 
-async fn invoke_view(cmd: &str, args: JsValue) -> Option<PuzzleView> {
+async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
+    let args = serde_wasm_bindgen::to_value(&args).ok()?;
     let value = invoke(cmd, args).await;
     serde_wasm_bindgen::from_value(value).ok()
-}
-
-async fn call_get_state() -> Option<PuzzleView> {
-    let args = serde_wasm_bindgen::to_value(&NoArgs {}).ok()?;
-    invoke_view("get_state", args).await
-}
-
-async fn call_new_puzzle(n: usize) -> Option<PuzzleView> {
-    let args = serde_wasm_bindgen::to_value(&NewPuzzleArgs { n }).ok()?;
-    invoke_view("new_puzzle", args).await
-}
-
-async fn call_undo() -> Option<PuzzleView> {
-    let args = serde_wasm_bindgen::to_value(&NoArgs {}).ok()?;
-    invoke_view("undo", args).await
-}
-
-async fn call_redo() -> Option<PuzzleView> {
-    let args = serde_wasm_bindgen::to_value(&NoArgs {}).ok()?;
-    invoke_view("redo", args).await
 }
 
 #[component]
 pub fn App() -> impl IntoView {
     let (puzzle, set_puzzle) = signal::<Option<PuzzleView>>(None);
 
-    spawn_local(async move {
-        if let Some(view) = call_get_state().await {
-            set_puzzle.set(Some(view));
-        }
-    });
+    let refresh = move |fut: std::pin::Pin<Box<dyn Future<Output = Option<PuzzleView>>>>| {
+        spawn_local(async move {
+            if let Some(view) = fut.await {
+                set_puzzle.set(Some(view));
+            }
+        });
+    };
+
+    refresh(Box::pin(call("get_state", NoArgs {})));
 
     let on_size_change = move |ev: Event| {
-        let value = event_target_value(&ev);
-        let Ok(n) = value.parse::<usize>() else {
+        let Ok(n) = event_target_value(&ev).parse::<usize>() else {
             return;
         };
-        spawn_local(async move {
-            if let Some(view) = call_new_puzzle(n).await {
-                set_puzzle.set(Some(view));
-            }
-        });
+        refresh(Box::pin(call("new_puzzle", NewPuzzleArgs { n })));
     };
 
-    let on_undo = move |_| {
-        spawn_local(async move {
-            if let Some(view) = call_undo().await {
-                set_puzzle.set(Some(view));
-            }
-        });
-    };
-
-    let on_redo = move |_| {
-        spawn_local(async move {
-            if let Some(view) = call_redo().await {
-                set_puzzle.set(Some(view));
-            }
-        });
-    };
+    let on_undo = move |_| refresh(Box::pin(call("undo", NoArgs {})));
+    let on_redo = move |_| refresh(Box::pin(call("redo", NoArgs {})));
 
     let summary = move || match puzzle.get() {
         Some(v) => format!("{}×{} with {} cages", v.n, v.n, v.cages.len()),
         None => "loading…".to_string(),
     };
 
-    let current_n =
-        move || puzzle.get().map(|v| v.n.to_string()).unwrap_or_else(|| "4".to_string());
-
-    let title_style = format!(
-        "font-family: {serif}; color: {ink}; margin: 0;",
-        serif = theme::SERIF_FONT,
-        ink = theme::INK,
-    );
-    let header_style = format!(
-        "display: flex; align-items: center; justify-content: space-between; \
-         padding: 1rem 1.5rem; border-bottom: 1px solid {line}; background: {bg};",
-        line = theme::LINE,
-        bg = theme::BG,
-    );
-    let controls_style = format!("display: flex; gap: 0.75rem; align-items: center;");
-    let main_style = format!(
-        "padding: 2rem 1.5rem; font-family: {sans}; color: {ink2};",
-        sans = theme::SANS_FONT,
-        ink2 = theme::INK2,
-    );
-    let summary_style = format!(
-        "font-family: {mono}; color: {ink}; font-size: 1.1rem;",
-        mono = theme::MONO_FONT,
-        ink = theme::INK,
-    );
+    let current_n = move || {
+        puzzle
+            .get()
+            .map(|v| v.n.to_string())
+            .unwrap_or_else(|| "4".to_string())
+    };
 
     view! {
-        <div>
-            <header style=header_style>
-                <h1 style=title_style>"KenKen Designer"</h1>
-                <div style=controls_style>
-                    <label>
-                        "Size: "
-                        <select on:change=on_size_change prop:value=current_n>
-                            <option value="3">"3"</option>
-                            <option value="4">"4"</option>
-                            <option value="5">"5"</option>
-                            <option value="6">"6"</option>
-                            <option value="7">"7"</option>
-                            <option value="8">"8"</option>
-                            <option value="9">"9"</option>
-                        </select>
-                    </label>
-                    <button on:click=on_undo>"Undo"</button>
-                    <button on:click=on_redo>"Redo"</button>
-                </div>
-            </header>
-            <main style=main_style>
-                <div style=summary_style>{summary}</div>
-            </main>
-        </div>
+        <header class="app-header">
+            <h1 class="app-title">"KenKen Designer"</h1>
+            <div class="app-controls">
+                <label>
+                    "Size: "
+                    <select on:change=on_size_change prop:value=current_n>
+                        <option value="3">"3"</option>
+                        <option value="4">"4"</option>
+                        <option value="5">"5"</option>
+                        <option value="6">"6"</option>
+                        <option value="7">"7"</option>
+                        <option value="8">"8"</option>
+                        <option value="9">"9"</option>
+                    </select>
+                </label>
+                <button on:click=on_undo>"Undo"</button>
+                <button on:click=on_redo>"Redo"</button>
+            </div>
+        </header>
+        <main class="app-main">
+            <div class="app-summary">{summary}</div>
+        </main>
     }
 }
