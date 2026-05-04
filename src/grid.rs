@@ -1,5 +1,6 @@
-use crate::app::{CageView, OpKind, PuzzleView};
+use crate::app::{CageView, DraftCage, OpKind, PuzzleView};
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
+use crate::cage_edit::effective_cages;
 use crate::cage_index::cage_anchor;
 use crate::theme::{ACCENT, BG, CAGE_PALETTE, INK, INK3, LINE, SERIF_FONT};
 use leptos::prelude::*;
@@ -100,6 +101,7 @@ enum Axis {
 #[allow(clippy::needless_pass_by_value)]
 pub fn Grid(
     view: PuzzleView,
+    draft: Option<DraftCage>,
     size: u32,
     cursor: Signal<(usize, usize)>,
     active_cage: Signal<Option<usize>>,
@@ -109,14 +111,15 @@ pub fn Grid(
     debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
 
     let layout = Layout::new(n, size);
-    let palette_idx = assign_cage_colors(&view, CAGE_PALETTE.len());
-    let cell_cage = build_cell_cage_map(&view);
+    let (effective, draft_idx) = effective_cages(&view, draft.as_ref());
+    let palette_idx = assign_cage_colors(n, &effective, CAGE_PALETTE.len());
+    let cell_cage = build_cell_cage_map(n, &effective);
 
     let cells_view = render_cells(&layout, &cell_cage, &palette_idx);
     let texts_view = render_texts(&view, &layout);
     let lines = render_gridlines(&layout, &cell_cage);
     let outer_size = layout.cell * usize_to_f64(n);
-    let op_labels = render_op_labels(&view, &layout);
+    let op_labels = render_op_labels(&effective, draft_idx, &layout);
     let cages = view.cages;
 
     let active_overlay = move || {
@@ -350,16 +353,25 @@ const fn stroke_for(thick: bool) -> (&'static str, f64) {
     }
 }
 
-fn render_op_labels(view: &PuzzleView, layout: &Layout) -> Vec<impl IntoView> {
+fn render_op_labels(
+    cages: &[CageView],
+    draft_idx: Option<usize>,
+    layout: &Layout,
+) -> Vec<impl IntoView> {
     let op_font = layout.op_font();
-    view.cages
+    cages
         .iter()
-        .map(|cage| {
+        .enumerate()
+        .map(|(i, cage)| {
             let (r, c) = cage_anchor(cage);
             let (cell_x, cell_y) = layout.origin(r, c);
             let label_x = cell_x + OP_INSET;
             let label_y = cell_y + OP_INSET;
-            let label = op_label(cage.op, cage.target);
+            let label = if Some(i) == draft_idx {
+                "?".to_string()
+            } else {
+                op_label(cage.op, cage.target)
+            };
             view! {
                 <text
                     x=label_x

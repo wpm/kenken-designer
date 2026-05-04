@@ -1,11 +1,10 @@
-use crate::app::PuzzleView;
+use crate::app::CageView;
 use std::collections::BTreeSet;
 
 #[must_use]
-pub fn build_cell_cage_map(view: &PuzzleView) -> Vec<Vec<Option<usize>>> {
-    let n = view.n;
+pub fn build_cell_cage_map(n: usize, cages: &[CageView]) -> Vec<Vec<Option<usize>>> {
     let mut map: Vec<Vec<Option<usize>>> = vec![vec![None; n]; n];
-    for (i, cage) in view.cages.iter().enumerate() {
+    for (i, cage) in cages.iter().enumerate() {
         for &(r, c) in &cage.cells {
             if r < n && c < n {
                 map[r][c] = Some(i);
@@ -16,18 +15,17 @@ pub fn build_cell_cage_map(view: &PuzzleView) -> Vec<Vec<Option<usize>>> {
 }
 
 #[must_use]
-pub fn assign_cage_colors(view: &PuzzleView, palette_size: usize) -> Vec<usize> {
-    let cage_count = view.cages.len();
+pub fn assign_cage_colors(n: usize, cages: &[CageView], palette_size: usize) -> Vec<usize> {
+    let cage_count = cages.len();
     if cage_count == 0 {
         return Vec::new();
     }
-    let n = view.n;
     let modulus = palette_size.max(1);
 
-    let cell_to_cage = build_cell_cage_map(view);
+    let cell_to_cage = build_cell_cage_map(n, cages);
 
     let mut adjacency: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); cage_count];
-    for (i, cage) in view.cages.iter().enumerate() {
+    for (i, cage) in cages.iter().enumerate() {
         for &(r, c) in &cage.cells {
             for (nr, nc) in cell_neighbors(r, c, n) {
                 if let Some(other) = cell_to_cage[nr][nc] {
@@ -92,7 +90,7 @@ fn cell_neighbors(r: usize, c: usize, n: usize) -> impl Iterator<Item = (usize, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{CageView, OpKind};
+    use crate::app::OpKind;
     use std::collections::BTreeSet;
 
     fn cage(cells: &[(usize, usize)]) -> CageView {
@@ -103,47 +101,36 @@ mod tests {
         }
     }
 
-    fn view_with(n: usize, cages: Vec<CageView>) -> PuzzleView {
-        PuzzleView {
-            n,
-            cells: vec![vec![Vec::new(); n]; n],
-            cages,
-        }
-    }
-
     #[test]
     fn single_cage_gets_color_zero() {
-        let view = view_with(2, vec![cage(&[(0, 0), (0, 1), (1, 0), (1, 1)])]);
-        assert_eq!(assign_cage_colors(&view, 8), vec![0]);
+        let cages = vec![cage(&[(0, 0), (0, 1), (1, 0), (1, 1)])];
+        assert_eq!(assign_cage_colors(2, &cages, 8), vec![0]);
     }
 
     #[test]
     fn non_adjacent_cages_share_color_zero() {
-        let view = view_with(3, vec![cage(&[(0, 0)]), cage(&[(2, 2)])]);
-        assert_eq!(assign_cage_colors(&view, 8), vec![0, 0]);
+        let cages = vec![cage(&[(0, 0)]), cage(&[(2, 2)])];
+        assert_eq!(assign_cage_colors(3, &cages, 8), vec![0, 0]);
     }
 
     #[test]
     fn adjacent_cages_get_distinct_colors() {
-        let view = view_with(2, vec![cage(&[(0, 0)]), cage(&[(0, 1)])]);
-        let colors = assign_cage_colors(&view, 8);
+        let cages = vec![cage(&[(0, 0)]), cage(&[(0, 1)])];
+        let colors = assign_cage_colors(2, &cages, 8);
         assert_eq!(colors.len(), 2);
         assert_ne!(colors[0], colors[1]);
     }
 
     #[test]
     fn chain_of_five_uses_at_most_two_colors() {
-        let view = view_with(
-            5,
-            vec![
-                cage(&[(0, 0)]),
-                cage(&[(0, 1)]),
-                cage(&[(0, 2)]),
-                cage(&[(0, 3)]),
-                cage(&[(0, 4)]),
-            ],
-        );
-        let colors = assign_cage_colors(&view, 8);
+        let cages = vec![
+            cage(&[(0, 0)]),
+            cage(&[(0, 1)]),
+            cage(&[(0, 2)]),
+            cage(&[(0, 3)]),
+            cage(&[(0, 4)]),
+        ];
+        let colors = assign_cage_colors(5, &cages, 8);
         let unique: BTreeSet<_> = colors.iter().copied().collect();
         assert!(
             unique.len() <= 2,
@@ -158,7 +145,7 @@ mod tests {
 
     #[test]
     fn no_cages_returns_empty() {
-        let view = view_with(4, vec![]);
-        assert!(assign_cage_colors(&view, 8).is_empty());
+        let cages: Vec<CageView> = vec![];
+        assert!(assign_cage_colors(4, &cages, 8).is_empty());
     }
 }
