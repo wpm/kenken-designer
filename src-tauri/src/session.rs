@@ -15,7 +15,7 @@ impl Session {
         })
     }
 
-    pub fn current(&self) -> &Puzzle {
+    pub const fn current(&self) -> &Puzzle {
         &self.current
     }
 
@@ -50,6 +50,7 @@ impl Session {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
