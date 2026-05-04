@@ -4,10 +4,13 @@ mod view;
 use std::sync::Mutex;
 
 use kenken::{generate, Puzzle};
-use tauri::State;
+use tauri::menu::{Menu, MenuBuilder, MenuEvent, MenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use session::Session;
 use view::PuzzleView;
+
+const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 
 fn fresh_puzzle(n: usize) -> Result<Puzzle, String> {
     let mut rng = rand::rng();
@@ -30,20 +33,40 @@ fn get_state(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
     Ok(PuzzleView::from(session.current()))
 }
 
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
-fn undo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
-    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
-    session.undo();
-    Ok(PuzzleView::from(session.current()))
+fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let undo = MenuItemBuilder::with_id("undo", "Undo")
+        .accelerator("CmdOrCtrl+Z")
+        .build(app)?;
+    let redo = MenuItemBuilder::with_id("redo", "Redo")
+        .accelerator("CmdOrCtrl+Shift+Z")
+        .build(app)?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .item(&undo)
+        .item(&redo)
+        .build()?;
+    MenuBuilder::new(app).item(&edit).build()
 }
 
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
-fn redo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
-    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
-    session.redo();
-    Ok(PuzzleView::from(session.current()))
+#[allow(clippy::needless_pass_by_value)] // on_menu_event requires by-value MenuEvent
+fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    let Some(state) = app.try_state::<Mutex<Session>>() else {
+        return;
+    };
+    let Ok(mut session) = state.lock() else {
+        return;
+    };
+    let id: &str = event.id().as_ref();
+    match id {
+        "undo" => {
+            session.undo();
+        }
+        "redo" => {
+            session.redo();
+        }
+        _ => return,
+    }
+    let view = PuzzleView::from(session.current());
+    let _ = app.emit(PUZZLE_UPDATED_EVENT, view);
 }
 
 /// # Panics
@@ -56,7 +79,9 @@ pub fn run() {
     let session = Session::new(initial);
     tauri::Builder::default()
         .manage(Mutex::new(session))
-        .invoke_handler(tauri::generate_handler![new_puzzle, get_state, undo, redo])
+        .menu(build_app_menu)
+        .on_menu_event(handle_menu_event)
+        .invoke_handler(tauri::generate_handler![new_puzzle, get_state])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

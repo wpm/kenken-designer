@@ -69,35 +69,19 @@ a:hover {
   text-decoration: underline;
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--paper-line);
-  background: var(--paper-bg);
-}
-
-.app-title {
-  margin: 0;
-  font-family: "Fraunces", Georgia, serif;
-  color: var(--paper-ink);
-}
-
-.app-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
 .app-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
   padding: 2rem 1.5rem;
+  min-height: 100vh;
   font-family: "Inter", system-ui, sans-serif;
   color: var(--paper-ink-2);
 }
 
-.app-summary {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+.size-control {
+  font-family: "Inter", system-ui, sans-serif;
   color: var(--paper-ink);
-  font-size: 1.1rem;
 }
