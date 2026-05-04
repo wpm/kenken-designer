@@ -20,7 +20,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wpm/KenKen
-          path: ../kenken
+          path: kenken-lib
+
+      - name: Point kenken path dep to checked-out library
+        run: |
+          sed -i 's|kenken = { path = "../../kenken" }|kenken = { path = "../kenken-lib" }|' src-tauri/Cargo.toml
 
       - uses: dtolnay/rust-toolchain@stable
         with:
