@@ -1,14 +1,18 @@
-.logo.leptos:hover {
-  filter: drop-shadow(0 0 2em #a82e20);
-}
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap");
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+:root {
+  --paper-bg: #f4efe6;
+  --paper-ink: #26221b;
+  --paper-ink-2: #5c564a;
+  --paper-ink-3: #8b8476;
+  --paper-line: #b9ad93;
+  --paper-accent: #1a4e7a;
+
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--paper-ink);
+  background-color: var(--paper-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -17,57 +21,32 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
+html,
+body {
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  padding: 0;
+  background-color: var(--paper-bg);
+  color: var(--paper-ink);
+  min-height: 100vh;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+h1,
+h2,
+h3 {
+  font-family: "Fraunces", Georgia, serif;
+  color: var(--paper-ink);
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
+button,
+select,
+input {
   font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  font-size: 0.95rem;
+  color: var(--paper-ink);
+  background: transparent;
+  border: 1px solid var(--paper-line);
+  border-radius: 4px;
+  padding: 0.35rem 0.75rem;
 }
 
 button {
@@ -75,38 +54,52 @@ button {
 }
 
 button:hover {
-  border-color: #396cd8;
+  border-color: var(--paper-accent);
+  color: var(--paper-accent);
 }
+
 button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+  background-color: rgba(26, 78, 122, 0.08);
 }
 
-input,
-button {
-  outline: none;
+a {
+  color: var(--paper-accent);
+  text-decoration: none;
 }
 
-#greet-input {
-  margin-right: 5px;
+a:hover {
+  text-decoration: underline;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--paper-line);
+  background: var(--paper-bg);
+}
 
-  a:hover {
-    color: #24c8db;
-  }
+.app-title {
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  color: var(--paper-ink);
+}
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
+.app-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-main {
+  padding: 2rem 1.5rem;
+  font-family: "Inter", system-ui, sans-serif;
+  color: var(--paper-ink-2);
+}
+
+.app-summary {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  color: var(--paper-ink);
+  font-size: 1.1rem;
 }
