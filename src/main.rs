@@ -1,6 +1,7 @@
 mod app;
+mod theme;
 
-use app::*;
+use app::App;
 use leptos::prelude::*;
 
 fn main() {
