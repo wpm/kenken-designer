@@ -1,4 +1,4 @@
-use kenken::{random_merge_split, Cage, Cell, Operation, Polyomino, Puzzle};
+use kenken::{Cage, Cell, Operation, Polyomino, Puzzle};
 
 use crate::view::{DraftCage, OpKind};
 
@@ -211,34 +211,6 @@ pub fn do_flip_cell(
         });
         Ok((next, drafts))
     }
-}
-
-pub fn do_random_merge_split_cages(
-    puzzle: &Puzzle,
-    a_anchor: (usize, usize),
-    b_anchor: (usize, usize),
-    rng: &mut impl rand::Rng,
-) -> Result<(Puzzle, Vec<DraftCage>), String> {
-    let cage_a = cage_at_or_err(puzzle, a_anchor)?;
-    let cage_b = cage_at_or_err(puzzle, b_anchor)?;
-    if cage_a.polyomino() == cage_b.polyomino() {
-        return Err("cages are the same".into());
-    }
-    let poly_a = cage_a.polyomino().clone();
-    let poly_b = cage_b.polyomino().clone();
-
-    let (q1, q2) = random_merge_split(&poly_a, &poly_b, rng).map_err(|e| format!("{e:?}"))?;
-
-    let next = puzzle.clone().remove_cage(&poly_a).remove_cage(&poly_b);
-    let drafts = vec![
-        DraftCage {
-            cells: cells_to_vec(&q1),
-        },
-        DraftCage {
-            cells: cells_to_vec(&q2),
-        },
-    ];
-    Ok((next, drafts))
 }
 
 #[cfg(test)]
@@ -605,46 +577,5 @@ mod tests {
             .insert_cage(add_cage(&[(2, 0), (2, 1)], 5, 4))
             .unwrap();
         assert!(do_flip_cell(&p, (0, 0), (2, 0)).is_err());
-    }
-
-    #[test]
-    fn random_merge_split_cages_produces_two_drafts() {
-        use rand::SeedableRng;
-        let p = Puzzle::new(4)
-            .unwrap()
-            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
-            .unwrap()
-            .insert_cage(add_cage(&[(1, 0), (1, 1)], 5, 4))
-            .unwrap();
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-        let (next, drafts) = do_random_merge_split_cages(&p, (0, 0), (1, 0), &mut rng).unwrap();
-        assert_eq!(drafts.len(), 2);
-        assert_eq!(next.cages().count(), 0);
-        let total: usize = drafts.iter().map(|d| d.cells.len()).sum();
-        assert_eq!(total, 4);
-    }
-
-    #[test]
-    fn random_merge_split_cages_errors_when_not_adjacent() {
-        use rand::SeedableRng;
-        let p = Puzzle::new(4)
-            .unwrap()
-            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
-            .unwrap()
-            .insert_cage(add_cage(&[(2, 0), (2, 1)], 5, 4))
-            .unwrap();
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-        assert!(do_random_merge_split_cages(&p, (0, 0), (2, 0), &mut rng).is_err());
-    }
-
-    #[test]
-    fn random_merge_split_cages_errors_when_same_cage() {
-        use rand::SeedableRng;
-        let p = Puzzle::new(4)
-            .unwrap()
-            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
-            .unwrap();
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-        assert!(do_random_merge_split_cages(&p, (0, 0), (0, 1), &mut rng).is_err());
     }
 }

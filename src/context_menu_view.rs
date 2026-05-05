@@ -1,6 +1,6 @@
 use crate::app::{
     apply_edit, call_edit, dispatch_edit, sync_active_cage, ContextMenuState, DraftCage,
-    FlipCellArgs, PuzzleView, RandomMergeSplitCagesArgs,
+    FlipCellArgs, PuzzleView,
 };
 use crate::cage_edit::{delete_at, escape_at, splinter_at};
 use crate::cage_index::cage_anchor;
@@ -60,11 +60,6 @@ pub fn ContextMenu(
     let items = state.items;
 
     let close = move || on_close.run(());
-
-    let a_anchor = puzzle.with_untracked(|opt| {
-        opt.as_ref()
-            .and_then(|v| crate::cage_index::cage_at(v, r, c).map(|idx| cage_anchor(&v.cages[idx])))
-    });
 
     let menu_style = format!(
         "position:fixed;left:{x}px;top:{y}px;background:{BG};border:0.5px solid {LINE};\
@@ -179,10 +174,9 @@ pub fn ContextMenu(
                 </div>
             })}
             {(!items.adjacent_targets.is_empty()).then({
-                let sep = sep_style.clone();
-                let targets = items.adjacent_targets.clone();
+                let targets = items.adjacent_targets;
                 move || view! {
-                    <div style=sep />
+                    <div style=sep_style />
                     <div style=label_style()>"Flip to cage\u{2026}"</div>
                     {targets.iter().map(|ft| {
                         let anchor = ft.anchor;
@@ -202,44 +196,6 @@ pub fn ContextMenu(
                                             cell: (r, c),
                                             target_anchor: anchor,
                                         })),
-                                        None,
-                                    );
-                                    close2();
-                                }
-                            >
-                                {format!("  {label}")}
-                            </div>
-                        }
-                    }).collect::<Vec<_>>()}
-                }
-            })}
-            {(!items.adjacent_targets.is_empty()).then({
-                let targets = items.adjacent_targets;
-                move || view! {
-                    <div style=sep_style />
-                    <div style=label_style()>"Random merge-split with\u{2026}"</div>
-                    {targets.into_iter().map(|ft| {
-                        let b_anchor = ft.anchor;
-                        let label = ft.label;
-                        let my_a_anchor = a_anchor.unwrap_or((r, c));
-                        let close2 = close;
-                        view! {
-                            <div
-                                style=item_style()
-                                on:mouseenter=item_enter
-                                on:mouseleave=item_leave
-                                on:mousedown=move |ev: leptos::ev::MouseEvent| {
-                                    ev.prevent_default();
-                                    dispatch_edit(
-                                        set_puzzle,
-                                        drafts,
-                                        Box::pin(call_edit(
-                                            "random_merge_split_cages",
-                                            RandomMergeSplitCagesArgs {
-                                                a_anchor: my_a_anchor,
-                                                b_anchor,
-                                            },
-                                        )),
                                         None,
                                     );
                                     close2();

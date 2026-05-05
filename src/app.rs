@@ -77,13 +77,6 @@ pub struct FlipCellArgs {
     pub target_anchor: (usize, usize),
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RandomMergeSplitCagesArgs {
-    pub a_anchor: (usize, usize),
-    pub b_anchor: (usize, usize),
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PuzzleView {
     pub n: usize,

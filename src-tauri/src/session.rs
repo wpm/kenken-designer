@@ -1,29 +1,22 @@
 use kenken::Puzzle;
-use rand::rngs::SmallRng;
 
 pub struct Session {
     current: Puzzle,
     undo: Vec<Puzzle>,
     redo: Vec<Puzzle>,
-    rng: SmallRng,
 }
 
 impl Session {
-    pub fn new(current: Puzzle) -> Self {
+    pub const fn new(current: Puzzle) -> Self {
         Self {
             current,
             undo: Vec::new(),
             redo: Vec::new(),
-            rng: rand::make_rng(),
         }
     }
 
     pub const fn current(&self) -> &Puzzle {
         &self.current
-    }
-
-    pub const fn rng_mut(&mut self) -> &mut SmallRng {
-        &mut self.rng
     }
 
     pub fn commit(&mut self, next: Puzzle) {
@@ -50,7 +43,6 @@ impl Session {
         true
     }
 
-    #[allow(dead_code)] // exposed for future "abandon" semantics
     pub fn replace(&mut self, p: Puzzle) {
         self.current = p;
     }
