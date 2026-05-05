@@ -12,7 +12,7 @@ const THICK_STROKE: f64 = 2.2;
 const THIN_STROKE: f64 = 0.5;
 const OP_HALO_STROKE: f64 = 2.5;
 const OP_INSET: f64 = 4.0;
-const UNCAGED_FILL: &str = "#fefcf7";
+pub const UNCAGED_FILL: &str = "#fefcf7";
 const ACTIVE_FILL_OPACITY: &str = "0.16";
 const CURSOR_INSET: f64 = 1.5;
 const CURSOR_STROKE: &str = "2.5";
@@ -438,7 +438,7 @@ const fn op_glyph(op: OpKind) -> &'static str {
     }
 }
 
-fn op_label(op: OpKind, target: u32) -> String {
+pub fn op_label(op: OpKind, target: u32) -> String {
     match op {
         OpKind::Add => format!("+{target}"),
         OpKind::Sub => format!("{target}\u{2212}"),
@@ -448,7 +448,7 @@ fn op_label(op: OpKind, target: u32) -> String {
     }
 }
 
-const fn ceil_sqrt(n: usize) -> usize {
+pub const fn ceil_sqrt(n: usize) -> usize {
     if n <= 1 {
         return n;
     }
@@ -460,6 +460,6 @@ const fn ceil_sqrt(n: usize) -> usize {
 }
 
 #[allow(clippy::cast_precision_loss)]
-const fn usize_to_f64(x: usize) -> f64 {
+pub const fn usize_to_f64(x: usize) -> f64 {
     x as f64
 }
