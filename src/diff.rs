@@ -2,18 +2,15 @@
 // main binary entry-point; suppress the lint rather than sprinkle it on every item.
 #![allow(dead_code)]
 
-/// Per-cell change between two puzzle states.
-/// Mirrors `src-tauri/src/diff.rs::CellDiff` for frontend deserialization.
+use crate::grid::{ceil_sqrt, usize_to_f64};
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Default)]
 pub struct CellDiff {
-    /// (row, column)
     pub cell: (usize, usize),
     pub removed: Vec<u8>,
     pub added: Vec<u8>,
 }
 
-/// Diff between two puzzle states.
-/// Mirrors `src-tauri/src/diff.rs::PuzzleDiff` for frontend deserialization.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Default)]
 pub struct PuzzleDiff {
     pub changes: Vec<CellDiff>,
@@ -26,26 +23,15 @@ impl PuzzleDiff {
     }
 }
 
-/// A single entry in the flash overlay, representing one digit at one position.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FlashEntry {
-    /// SVG x coordinate (centre of digit)
     pub x: f64,
-    /// SVG y coordinate (centre of digit)
     pub y: f64,
-    /// The digit value
     pub value: u8,
-    /// Whether this entry represents a removed digit (true) or added digit (false)
     pub removed: bool,
 }
 
-/// Compute the set of flash entries for a diff, given the layout parameters.
-///
-/// `cell_size` is the width/height of one grid cell in SVG units.
-/// `margin` is the offset from the SVG origin to the first cell.
-/// `n` is the puzzle size (number of rows/cols).
 #[must_use]
-#[allow(clippy::many_single_char_names)]
 pub fn flash_entries(diff: &PuzzleDiff, cell_size: f64, margin: f64, n: usize) -> Vec<FlashEntry> {
     if n == 0 {
         return vec![];
@@ -83,7 +69,6 @@ pub fn flash_entries(diff: &PuzzleDiff, cell_size: f64, margin: f64, n: usize) -
     entries
 }
 
-#[allow(clippy::many_single_char_names)]
 fn digit_center(
     v: u8,
     cell_x: f64,
@@ -93,32 +78,12 @@ fn digit_center(
     cols: usize,
     cell_size: f64,
 ) -> (f64, f64) {
-    // Place the digit at its candidate sub-cell position.
     let idx = usize::from(v.saturating_sub(1));
     let sub_r = idx / cols;
     let sub_c = idx % cols;
     let x = usize_to_f64(sub_c).mul_add(sub_w, cell_x) + sub_w / 2.0;
     let y = usize_to_f64(sub_r).mul_add(sub_h, cell_y) + sub_h / 2.0;
-    // Clamp to cell bounds just in case
-    let x = x.min(cell_x + cell_size);
-    let y = y.min(cell_y + cell_size);
-    (x, y)
-}
-
-const fn ceil_sqrt(n: usize) -> usize {
-    if n <= 1 {
-        return n;
-    }
-    let mut x: usize = 1;
-    while x.saturating_mul(x) < n {
-        x += 1;
-    }
-    x
-}
-
-#[allow(clippy::cast_precision_loss)]
-const fn usize_to_f64(x: usize) -> f64 {
-    x as f64
+    (x.min(cell_x + cell_size), y.min(cell_y + cell_size))
 }
 
 #[cfg(test)]
