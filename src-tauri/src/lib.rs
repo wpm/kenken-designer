@@ -133,6 +133,20 @@ fn shrink_cage(cell: (usize, usize), state: State<Mutex<Session>>) -> Result<Edi
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn set_cage_operation(
+    anchor: (usize, usize),
+    op: OpKind,
+    target: u32,
+    state: State<Mutex<Session>>,
+) -> Result<PuzzleView, String> {
+    do_command(&state, |session| {
+        let next = cage_edit::do_set_cage_operation(session.current(), anchor, op, target)?;
+        Ok(commit_view(session, next))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn merge_cages(
     a_anchor: (usize, usize),
     b_anchor: (usize, usize),
@@ -322,7 +336,8 @@ pub fn run() {
             remove_cage,
             extend_cage,
             shrink_cage,
-            merge_cages
+            merge_cages,
+            set_cage_operation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -730,6 +745,30 @@ mod tests {
     fn shrink_cage_command_returns_err_for_uncovered_cell() {
         let app = empty_session_app(4);
         assert!(shrink_cage((0, 0), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn set_cage_operation_command_replaces_op_and_target() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let view =
+            set_cage_operation((0, 0), OpKind::Mul, 12, app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.cages.len(), 1);
+        assert_eq!(view.cages[0].op, OpKind::Mul);
+        assert_eq!(view.cages[0].target, 12);
+    }
+
+    #[test]
+    fn set_cage_operation_command_returns_err_when_no_cage_at_anchor() {
+        let app = empty_session_app(4);
+        assert!(set_cage_operation((0, 0), OpKind::Add, 3, app.state::<Mutex<Session>>()).is_err());
     }
 
     #[test]

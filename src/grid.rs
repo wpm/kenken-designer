@@ -2,6 +2,7 @@ use crate::app::{CageView, DraftCage, OpKind, PuzzleView};
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
 use crate::cage_edit::effective_cages;
 use crate::cage_index::cage_anchor;
+use crate::operator_entry::{ActiveCage, OperatorEntry};
 use crate::theme::{ACCENT, BG, CAGE_PALETTE, INK, INK3, LINE, SERIF_FONT};
 use leptos::prelude::*;
 
@@ -15,6 +16,7 @@ const UNCAGED_FILL: &str = "#fefcf7";
 const ACTIVE_FILL_OPACITY: &str = "0.16";
 const CURSOR_INSET: f64 = 1.5;
 const CURSOR_STROKE: &str = "2.5";
+const CURSOR_STROKE_ENTRY: &str = "3";
 
 #[derive(Clone, Copy)]
 struct Layout {
@@ -106,6 +108,7 @@ pub fn Grid(
     cursor: Signal<(usize, usize)>,
     active_cage: Signal<Option<usize>>,
     on_cell_click: Callback<(usize, usize)>,
+    entry: RwSignal<Option<OperatorEntry>>,
 ) -> impl IntoView {
     let n = view.n;
     debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
@@ -119,7 +122,7 @@ pub fn Grid(
     let texts_view = render_texts(&view, &layout);
     let lines = render_gridlines(&layout, &cell_cage);
     let outer_size = layout.cell * usize_to_f64(n);
-    let op_labels = render_op_labels(&effective, draft_idx, &layout);
+    let op_labels = render_op_labels(&effective, draft_idx, &layout, entry);
     let cages = view.cages;
 
     let active_overlay = move || {
@@ -129,7 +132,7 @@ pub fn Grid(
             .map(|cage| -> Vec<_> { active_cage_overlay_rects(cage, layout) })
     };
 
-    let cursor_rect = move || cursor_rect_view(cursor.get(), layout);
+    let cursor_rect = move || cursor_rect_view(cursor.get(), layout, entry.get().is_some());
 
     let click_overlay = render_click_overlay(layout, on_cell_click);
 
@@ -182,9 +185,15 @@ fn active_cage_overlay_rects(cage: &CageView, layout: Layout) -> Vec<impl IntoVi
         .collect()
 }
 
-fn cursor_rect_view(cursor: (usize, usize), layout: Layout) -> impl IntoView {
+fn cursor_rect_view(cursor: (usize, usize), layout: Layout, in_entry: bool) -> impl IntoView {
     let (x, y) = layout.origin(cursor.0, cursor.1);
     let side = 2.0_f64.mul_add(-CURSOR_INSET, layout.cell).max(0.0);
+    let stroke_color = if in_entry { INK } else { ACCENT };
+    let stroke_width = if in_entry {
+        CURSOR_STROKE_ENTRY
+    } else {
+        CURSOR_STROKE
+    };
     view! {
         <rect
             x=x + CURSOR_INSET
@@ -192,8 +201,8 @@ fn cursor_rect_view(cursor: (usize, usize), layout: Layout) -> impl IntoView {
             width=side
             height=side
             fill="none"
-            stroke=ACCENT
-            stroke-width=CURSOR_STROKE
+            stroke=stroke_color
+            stroke-width=stroke_width
             pointer-events="none"
         />
     }
@@ -357,6 +366,7 @@ fn render_op_labels(
     cages: &[CageView],
     draft_idx: Option<usize>,
     layout: &Layout,
+    entry: RwSignal<Option<OperatorEntry>>,
 ) -> Vec<impl IntoView> {
     let op_font = layout.op_font();
     cages
@@ -367,10 +377,29 @@ fn render_op_labels(
             let (cell_x, cell_y) = layout.origin(r, c);
             let label_x = cell_x + OP_INSET;
             let label_y = cell_y + OP_INSET;
-            let label = if Some(i) == draft_idx {
-                "?".to_string()
-            } else {
-                op_label(cage.op, cage.target)
+            let is_draft = Some(i) == draft_idx;
+            let cage_op = cage.op;
+            let cage_target = cage.target;
+            let label = move || {
+                let entry_val = entry.get();
+                let is_entry_cage = entry_val.as_ref().is_some_and(|e| match &e.cage {
+                    ActiveCage::Committed(idx) => *idx == i,
+                    ActiveCage::Draft => is_draft,
+                });
+                if let Some(e) = entry_val.filter(|_| is_entry_cage) {
+                    let op_glyph = match e.op {
+                        Some(OpKind::Add) => "+",
+                        Some(OpKind::Sub) => "\u{2212}",
+                        Some(OpKind::Mul) => "\u{00d7}",
+                        Some(OpKind::Div) => "\u{00f7}",
+                        Some(OpKind::Given) | None => "",
+                    };
+                    format!("{}{}|", op_glyph, e.digits)
+                } else if is_draft {
+                    "?".to_string()
+                } else {
+                    op_label(cage_op, cage_target)
+                }
             };
             view! {
                 <text
