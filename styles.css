@@ -6,6 +6,10 @@
   --paper-line: #b9ad93;
   --paper-accent: #1a4e7a;
 
+  --flash-duration: 300ms;
+  --flash-removed-color: var(--c-warning, #c0392b);
+  --flash-added-glow: var(--c-accent, #1f77b4);
+
   font-family: "Inter", system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.5;
@@ -154,4 +158,44 @@ a:hover {
   width: 100%;
   height: 100%;
   border-radius: 2px;
+}
+
+/* Flash overlay animations */
+@keyframes flash-remove {
+  from {
+    opacity: 1;
+    text-decoration: line-through;
+  }
+  to {
+    opacity: 0;
+    text-decoration: line-through;
+  }
+}
+
+@keyframes flash-add {
+  from {
+    text-shadow: 0 0 6px color-mix(in srgb, var(--flash-added-glow) 60%, transparent);
+  }
+  to {
+    text-shadow: none;
+  }
+}
+
+.flash-removed {
+  fill: var(--flash-removed-color);
+  text-decoration: line-through;
+  animation: flash-remove var(--flash-duration) ease-out forwards;
+  pointer-events: none;
+}
+
+.flash-added {
+  fill: var(--flash-added-glow);
+  animation: flash-add var(--flash-duration) ease-out forwards;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --flash-duration: 0ms;
+  }
 }
