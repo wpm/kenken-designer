@@ -19,7 +19,7 @@ const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 fn commit_new_puzzle(state: &Mutex<Session>, n: usize) -> Result<PuzzleView, String> {
     let puzzle = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
-    session.replace(puzzle);
+    session.load(puzzle);
     Ok(PuzzleView::from(session.current()))
 }
 

@@ -11,7 +11,7 @@ const fn op_legal_for_size(op: Operation, size: usize) -> bool {
 }
 
 #[allow(clippy::cast_possible_truncation)]
-const fn build_operation(op: OpKind, target: u32) -> Operation {
+pub const fn build_operation(op: OpKind, target: u32) -> Operation {
     match op {
         OpKind::Add => Operation::Add(target as u8),
         OpKind::Sub => Operation::Subtract(target as u8),

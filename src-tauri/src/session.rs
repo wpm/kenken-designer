@@ -43,8 +43,15 @@ impl Session {
         true
     }
 
+    #[cfg(test)]
     pub fn replace(&mut self, p: Puzzle) {
         self.current = p;
+    }
+
+    pub fn load(&mut self, p: Puzzle) {
+        self.current = p;
+        self.undo.clear();
+        self.redo.clear();
     }
 }
 
@@ -123,6 +130,21 @@ mod tests {
         s.replace(fresh(7));
         assert_eq!(s.current().n(), 7);
         assert_eq!(s.undo.len(), 1);
+        assert!(s.redo.is_empty());
+    }
+
+    #[test]
+    fn load_clears_both_stacks() {
+        let mut s = Session::new(fresh(3));
+        s.commit(fresh(4));
+        s.commit(fresh(5));
+        s.undo();
+        assert_eq!(s.undo.len(), 1);
+        assert_eq!(s.redo.len(), 1);
+
+        s.load(fresh(6));
+        assert_eq!(s.current().n(), 6);
+        assert!(s.undo.is_empty());
         assert!(s.redo.is_empty());
     }
 }
