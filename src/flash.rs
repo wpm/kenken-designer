@@ -5,9 +5,6 @@
 use crate::diff::{flash_entries, FlashEntry, PuzzleDiff};
 use leptos::prelude::*;
 
-const CLASS_REMOVED: &str = "flash-removed";
-const CLASS_ADDED: &str = "flash-added";
-
 /// Overlay that renders a `PuzzleDiff` as a transient flash animation.
 ///
 /// Positions itself as a `<g>` inside the grid SVG with `pointer-events: none`.
@@ -70,9 +67,9 @@ pub fn FlashOverlay(
 
 fn render_flash_entry(entry: FlashEntry) -> impl IntoView {
     let class = if entry.removed {
-        CLASS_REMOVED
+        "flash-removed"
     } else {
-        CLASS_ADDED
+        "flash-added"
     };
     view! {
         <text
