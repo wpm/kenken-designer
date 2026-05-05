@@ -71,6 +71,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn apply_edit_propagates_edit_closure_error() {
+        let pre = Puzzle::new(3).unwrap();
+        let result = apply_edit(&pre, EditKind::Narrowing, |_| {
+            Err("injected error".to_owned())
+        });
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("injected error"));
+    }
+
     /// After removing a Given cage that forced row 0 values, widening via `apply_edit` must
     /// restore the full domain to cells that were constrained by it.
     #[test]
