@@ -22,7 +22,7 @@ impl Session {
         &self.current
     }
 
-    pub fn rng_mut(&mut self) -> &mut SmallRng {
+    pub const fn rng_mut(&mut self) -> &mut SmallRng {
         &mut self.rng
     }
 
