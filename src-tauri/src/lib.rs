@@ -825,6 +825,4 @@ mod tests {
         .unwrap();
         assert!(flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).is_err());
     }
-
 }
-

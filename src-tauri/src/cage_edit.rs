@@ -578,5 +578,4 @@ mod tests {
             .unwrap();
         assert!(do_flip_cell(&p, (0, 0), (2, 0)).is_err());
     }
-
 }
