@@ -271,7 +271,6 @@ pub fn App() -> impl IntoView {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn install_keydown_handler(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
@@ -283,50 +282,7 @@ fn install_keydown_handler(
     window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
         if let Some(current_entry) = entry.get_untracked() {
             ev.prevent_default();
-            let single_cell = puzzle.with_untracked(|opt| {
-                opt.as_ref().is_some_and(|v| match &current_entry.cage {
-                    ActiveCage::Committed(idx) => {
-                        v.cages.get(*idx).is_some_and(|c| c.cells.len() == 1)
-                    }
-                    ActiveCage::Draft => {
-                        draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.cells.len() == 1))
-                    }
-                })
-            });
-            let cage = current_entry.cage.clone();
-            match operator_step(current_entry, &ev.key(), single_cell) {
-                Step::Update(new_entry) => entry.set(Some(new_entry)),
-                Step::Cancel => entry.set(None),
-                Step::Commit { op, target } => {
-                    entry.set(None);
-                    match cage {
-                        ActiveCage::Draft => {
-                            let cells = draft.with_untracked(|d| {
-                                d.as_ref().map(|d| d.cells.clone()).unwrap_or_default()
-                            });
-                            set_draft_if_changed(draft, None);
-                            refresh_from(
-                                set_puzzle,
-                                Box::pin(call("insert_cage", InsertCageArgs { cells, op, target })),
-                            );
-                        }
-                        ActiveCage::Committed(idx) => {
-                            let anchor = puzzle.with_untracked(|opt| {
-                                opt.as_ref().and_then(|v| v.cages.get(idx)).map(cage_anchor)
-                            });
-                            if let Some(anchor) = anchor {
-                                refresh_from(
-                                    set_puzzle,
-                                    Box::pin(call(
-                                        "set_cage_operation",
-                                        SetCageOperationArgs { anchor, op, target },
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            handle_entry_key(puzzle, set_puzzle, draft, entry, current_entry, &ev.key());
             return;
         }
 
@@ -334,40 +290,8 @@ fn install_keydown_handler(
         let key = ev.key();
 
         if key == "Enter" && !ev.shift_key() && !modifier && !is_text_input_focused() {
-            let active = puzzle.with_untracked(|opt| {
-                opt.as_ref().and_then(|v| {
-                    let (r, c) = cursor.get_untracked();
-                    cage_at(v, r, c).map(|idx| {
-                        let anchor = cage_anchor(&v.cages[idx]);
-                        let cage_op = v.cages[idx].op;
-                        let cage_target = v.cages[idx].target;
-                        (ActiveCage::Committed(idx), anchor, cage_op, cage_target)
-                    })
-                })
-            });
-            if let Some((active_cage_val, anchor, cage_op, cage_target)) = active {
+            if handle_enter_key(puzzle, cursor, draft, entry) {
                 ev.prevent_default();
-                cursor.set(anchor);
-                entry.set(Some(OperatorEntry {
-                    cage: active_cage_val,
-                    op: Some(cage_op),
-                    digits: if cage_target > 0 {
-                        cage_target.to_string()
-                    } else {
-                        String::new()
-                    },
-                }));
-            } else {
-                let draft_cells = draft.with_untracked(|d| d.as_ref().map(|d| d.cells.clone()));
-                if let Some(cells) = draft_cells {
-                    ev.prevent_default();
-                    cursor.set(cells_anchor(&cells));
-                    entry.set(Some(OperatorEntry {
-                        cage: ActiveCage::Draft,
-                        op: None,
-                        digits: String::new(),
-                    }));
-                }
             }
             return;
         }
@@ -407,6 +331,100 @@ fn install_keydown_handler(
             }
         }
     });
+}
+
+fn handle_entry_key(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    draft: RwSignal<Option<DraftCage>>,
+    entry: RwSignal<Option<OperatorEntry>>,
+    current_entry: OperatorEntry,
+    key: &str,
+) {
+    let single_cell = puzzle.with_untracked(|opt| {
+        opt.as_ref().is_some_and(|v| match &current_entry.cage {
+            ActiveCage::Committed(idx) => v.cages.get(*idx).is_some_and(|c| c.cells.len() == 1),
+            ActiveCage::Draft => {
+                draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.cells.len() == 1))
+            }
+        })
+    });
+    let cage = current_entry.cage.clone();
+    match operator_step(current_entry, key, single_cell) {
+        Step::Update(new_entry) => entry.set(Some(new_entry)),
+        Step::Cancel => entry.set(None),
+        Step::Commit { op, target } => {
+            let fut: Pin<Box<dyn Future<Output = Option<PuzzleView>>>> = match cage {
+                ActiveCage::Draft => {
+                    let cells = draft.with_untracked(|d| {
+                        d.as_ref().map(|d| d.cells.clone()).unwrap_or_default()
+                    });
+                    set_draft_if_changed(draft, None);
+                    Box::pin(call("insert_cage", InsertCageArgs { cells, op, target }))
+                }
+                ActiveCage::Committed(idx) => {
+                    let anchor = puzzle.with_untracked(|opt| {
+                        opt.as_ref().and_then(|v| v.cages.get(idx)).map(cage_anchor)
+                    });
+                    let Some(anchor) = anchor else { return };
+                    Box::pin(call(
+                        "set_cage_operation",
+                        SetCageOperationArgs { anchor, op, target },
+                    ))
+                }
+            };
+            spawn_local(async move {
+                if let Some(view) = fut.await {
+                    set_puzzle.set(Some(view));
+                    entry.set(None);
+                }
+            });
+        }
+    }
+}
+
+/// Returns true if a cage or draft was found and entry mode was opened.
+fn handle_enter_key(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    cursor: RwSignal<(usize, usize)>,
+    draft: RwSignal<Option<DraftCage>>,
+    entry: RwSignal<Option<OperatorEntry>>,
+) -> bool {
+    let active = puzzle.with_untracked(|opt| {
+        opt.as_ref().and_then(|v| {
+            let (r, c) = cursor.get_untracked();
+            cage_at(v, r, c).map(|idx| {
+                let anchor = cage_anchor(&v.cages[idx]);
+                let cage_op = v.cages[idx].op;
+                let cage_target = v.cages[idx].target;
+                (ActiveCage::Committed(idx), anchor, cage_op, cage_target)
+            })
+        })
+    });
+    if let Some((active_cage_val, anchor, cage_op, cage_target)) = active {
+        cursor.set(anchor);
+        entry.set(Some(OperatorEntry {
+            cage: active_cage_val,
+            op: Some(cage_op),
+            digits: if cage_target > 0 {
+                cage_target.to_string()
+            } else {
+                String::new()
+            },
+        }));
+        return true;
+    }
+    let draft_cells = draft.with_untracked(|d| d.as_ref().map(|d| d.cells.clone()));
+    if let Some(cells) = draft_cells {
+        cursor.set(cells_anchor(&cells));
+        entry.set(Some(OperatorEntry {
+            cage: ActiveCage::Draft,
+            op: None,
+            digits: String::new(),
+        }));
+        return true;
+    }
+    false
 }
 
 fn handle_navigate(

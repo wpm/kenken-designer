@@ -89,22 +89,16 @@ pub fn do_remove_cage(puzzle: &Puzzle, anchor: (usize, usize)) -> Result<Puzzle,
     Ok(puzzle.clone().remove_cage(&poly))
 }
 
-pub fn get_cage_cells(
-    puzzle: &Puzzle,
-    anchor: (usize, usize),
-) -> Result<Vec<(usize, usize)>, String> {
-    let cage = cage_at_or_err(puzzle, anchor)?;
-    Ok(cells_to_vec(cage.polyomino()))
-}
-
 pub fn do_set_cage_operation(
     puzzle: &Puzzle,
     anchor: (usize, usize),
     op: OpKind,
     target: u32,
 ) -> Result<Puzzle, String> {
-    let cells = get_cage_cells(puzzle, anchor)?;
-    let puzzle = do_remove_cage(puzzle, anchor)?;
+    let cage = cage_at_or_err(puzzle, anchor)?;
+    let cells = cells_to_vec(cage.polyomino());
+    let poly = cage.polyomino().clone();
+    let puzzle = puzzle.clone().remove_cage(&poly);
     do_insert_cage(&puzzle, &cells, op, target)
 }
 
@@ -402,24 +396,6 @@ mod tests {
             .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
             .unwrap();
         assert!(do_merge_cages(&p, (0, 0), (0, 1)).is_err());
-    }
-
-    #[test]
-    fn get_cage_cells_returns_cells_for_cage() {
-        let p = Puzzle::new(4)
-            .unwrap()
-            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
-            .unwrap();
-        let cells = get_cage_cells(&p, (0, 0)).unwrap();
-        assert_eq!(cells.len(), 2);
-        assert!(cells.contains(&(0, 0)));
-        assert!(cells.contains(&(0, 1)));
-    }
-
-    #[test]
-    fn get_cage_cells_errors_when_no_cage() {
-        let p = Puzzle::new(4).unwrap();
-        assert!(get_cage_cells(&p, (0, 0)).is_err());
     }
 
     #[test]
