@@ -301,13 +301,15 @@ fn install_keydown_handler(
             KeyAction::Ignore => {}
             KeyAction::Undo => {
                 ev.prevent_default();
-                set_draft_if_changed(draft, None);
-                refresh_from(set_puzzle, Box::pin(call("undo", NoArgs {})));
+                refresh_from_then(set_puzzle, Box::pin(call("undo", NoArgs {})), move || {
+                    set_draft_if_changed(draft, None);
+                });
             }
             KeyAction::Redo => {
                 ev.prevent_default();
-                set_draft_if_changed(draft, None);
-                refresh_from(set_puzzle, Box::pin(call("redo", NoArgs {})));
+                refresh_from_then(set_puzzle, Box::pin(call("redo", NoArgs {})), move || {
+                    set_draft_if_changed(draft, None);
+                });
             }
             KeyAction::Navigate(nav_key) => {
                 ev.prevent_default();
@@ -354,12 +356,12 @@ fn handle_entry_key(
         Step::Update(new_entry) => entry.set(Some(new_entry)),
         Step::Cancel => entry.set(None),
         Step::Commit { op, target } => {
+            let is_draft = cage == ActiveCage::Draft;
             let fut: Pin<Box<dyn Future<Output = Option<PuzzleView>>>> = match cage {
                 ActiveCage::Draft => {
                     let cells = draft.with_untracked(|d| {
                         d.as_ref().map(|d| d.cells.clone()).unwrap_or_default()
                     });
-                    set_draft_if_changed(draft, None);
                     Box::pin(call("insert_cage", InsertCageArgs { cells, op, target }))
                 }
                 ActiveCage::Committed(idx) => {
@@ -376,6 +378,9 @@ fn handle_entry_key(
             spawn_local(async move {
                 if let Some(view) = fut.await {
                     set_puzzle.set(Some(view));
+                    if is_draft {
+                        set_draft_if_changed(draft, None);
+                    }
                     entry.set(None);
                 }
             });
@@ -546,13 +551,15 @@ fn apply_edit(
             );
         }
         CageEdit::RemoveCage(anchor) => {
-            if active_cage.get_untracked().is_some() {
-                active_cage.set(None);
-            }
-            set_draft_if_changed(draft, None);
-            refresh_from(
+            refresh_from_then(
                 set_puzzle,
                 Box::pin(call("remove_cage", AnchorArgs { anchor })),
+                move || {
+                    if active_cage.get_untracked().is_some() {
+                        active_cage.set(None);
+                    }
+                    set_draft_if_changed(draft, None);
+                },
             );
         }
     }
@@ -595,9 +602,18 @@ fn refresh_from(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
     fut: Pin<Box<dyn Future<Output = Option<PuzzleView>>>>,
 ) {
+    refresh_from_then(set_puzzle, fut, || {});
+}
+
+fn refresh_from_then(
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    fut: Pin<Box<dyn Future<Output = Option<PuzzleView>>>>,
+    on_success: impl FnOnce() + 'static,
+) {
     spawn_local(async move {
         if let Some(view) = fut.await {
             set_puzzle.set(Some(view));
+            on_success();
         }
     });
 }
