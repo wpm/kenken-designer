@@ -1,5 +1,4 @@
 - Always do test-driven development. Iterate until green.
 - When you are ready to create a pull request, run `/simplify`.
 - After making a pull request, run `/review` on it.
-- Try to get the patch test coverage to or near 100%.
-- If working locally, use an isolated worktree.
+- Use an isolated worktree when working locally.
