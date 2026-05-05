@@ -58,7 +58,7 @@ impl From<&Puzzle> for PuzzleView {
             cells[cell.row][cell.column] = values.iter().collect();
         }
 
-        let cages = p
+        let mut cages: Vec<CageView> = p
             .cages()
             .map(|cage| {
                 let (op, target) = split_operation(cage.operation());
@@ -69,6 +69,7 @@ impl From<&Puzzle> for PuzzleView {
                 }
             })
             .collect();
+        cages.sort_unstable_by_key(|c| c.cells.first().copied());
 
         Self { n, cells, cages }
     }
@@ -135,6 +136,28 @@ mod tests {
             .unwrap();
         assert_eq!(given_cage.target, 2);
         assert_eq!(given_cage.cells, vec![(2, 2)]);
+    }
+
+    #[test]
+    fn cages_are_ordered_by_row_major_anchor() {
+        let p = Puzzle::new(3).unwrap();
+        // Cages is backed by a HashMap so iteration order is unspecified; inserting
+        // in reverse row-major order ensures the sort in PuzzleView::from is exercised.
+        let cage_c = Cage::new(3, Polyomino::new(&[Cell::new(2, 0)]), Operation::Given(3));
+        let cage_b = Cage::new(3, Polyomino::new(&[Cell::new(1, 0)]), Operation::Given(2));
+        let cage_a = Cage::new(3, Polyomino::new(&[Cell::new(0, 0)]), Operation::Given(1));
+        let p = p
+            .insert_cage(cage_c)
+            .unwrap()
+            .insert_cage(cage_b)
+            .unwrap()
+            .insert_cage(cage_a)
+            .unwrap();
+
+        let v = PuzzleView::from(&p);
+        assert_eq!(v.cages[0].cells, vec![(0, 0)]);
+        assert_eq!(v.cages[1].cells, vec![(1, 0)]);
+        assert_eq!(v.cages[2].cells, vec![(2, 0)]);
     }
 
     #[test]
