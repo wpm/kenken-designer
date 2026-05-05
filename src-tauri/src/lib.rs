@@ -75,7 +75,20 @@ fn commit_view(session: &mut Session, next: Puzzle) -> PuzzleView {
 
 fn commit_edit(session: &mut Session, next: Puzzle, draft: Option<DraftCage>) -> EditResult {
     let view = commit_view(session, next);
-    EditResult { view, draft }
+    EditResult {
+        view,
+        draft,
+        drafts: vec![],
+    }
+}
+
+fn commit_edit_multi(session: &mut Session, next: Puzzle, drafts: Vec<DraftCage>) -> EditResult {
+    let view = commit_view(session, next);
+    EditResult {
+        view,
+        draft: None,
+        drafts,
+    }
 }
 
 fn do_command<T>(
@@ -155,6 +168,39 @@ fn merge_cages(
     do_command(&state, |session| {
         let (next, draft) = cage_edit::do_merge_cages(session.current(), a_anchor, b_anchor)?;
         Ok(commit_edit(session, next, draft))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn flip_cell(
+    cell: (usize, usize),
+    target_anchor: (usize, usize),
+    state: State<Mutex<Session>>,
+) -> Result<EditResult, String> {
+    do_command(&state, |session| {
+        let (next, drafts) =
+            cage_edit::do_flip_cell(session.current(), cell, target_anchor)?;
+        Ok(commit_edit_multi(session, next, drafts))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn random_merge_split_cages(
+    a_anchor: (usize, usize),
+    b_anchor: (usize, usize),
+    state: State<Mutex<Session>>,
+) -> Result<EditResult, String> {
+    do_command(&state, |session| {
+        let puzzle = session.current().clone();
+        let (next, drafts) = cage_edit::do_random_merge_split_cages(
+            &puzzle,
+            a_anchor,
+            b_anchor,
+            &mut session.rng,
+        )?;
+        Ok(commit_edit_multi(session, next, drafts))
     })
 }
 
@@ -337,7 +383,9 @@ pub fn run() {
             extend_cage,
             shrink_cage,
             merge_cages,
-            set_cage_operation
+            set_cage_operation,
+            flip_cell,
+            random_merge_split_cages
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -793,5 +841,68 @@ mod tests {
         assert!(result.draft.is_none());
         assert_eq!(result.view.cages.len(), 1);
         assert_eq!(result.view.cages[0].cells.len(), 4);
+    }
+
+    #[test]
+    fn flip_cell_command_happy_path() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let result = flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(result.drafts.is_empty());
+        assert_eq!(result.view.cages.len(), 2);
+    }
+
+    #[test]
+    fn flip_cell_command_returns_err_when_cell_not_caged() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        assert!(flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn random_merge_split_cages_command_happy_path() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let result =
+            random_merge_split_cages((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(result.drafts.len(), 2);
+        assert!(result.draft.is_none());
+        assert_eq!(result.view.cages.len(), 0);
+        let total: usize = result.drafts.iter().map(|d| d.cells.len()).sum();
+        assert_eq!(total, 4);
     }
 }

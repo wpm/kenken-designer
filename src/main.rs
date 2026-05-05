@@ -2,6 +2,8 @@ mod app;
 mod cage_colors;
 mod cage_edit;
 mod cage_index;
+mod context_menu;
+mod context_menu_view;
 mod grid;
 mod navigation;
 mod operator_entry;

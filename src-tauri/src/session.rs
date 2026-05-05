@@ -1,17 +1,20 @@
 use kenken::Puzzle;
+use rand::rngs::SmallRng;
 
 pub struct Session {
     current: Puzzle,
     undo: Vec<Puzzle>,
     redo: Vec<Puzzle>,
+    pub rng: SmallRng,
 }
 
 impl Session {
-    pub const fn new(current: Puzzle) -> Self {
+    pub fn new(current: Puzzle) -> Self {
         Self {
             current,
             undo: Vec::new(),
             redo: Vec::new(),
+            rng: rand::make_rng(),
         }
     }
 

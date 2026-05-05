@@ -38,6 +38,7 @@ pub struct DraftCage {
 pub struct EditResult {
     pub view: PuzzleView,
     pub draft: Option<DraftCage>,
+    pub drafts: Vec<DraftCage>,
 }
 
 fn split_operation(op: Operation) -> (OpKind, u32) {

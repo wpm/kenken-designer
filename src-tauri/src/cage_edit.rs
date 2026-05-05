@@ -1,4 +1,4 @@
-use kenken::{Cage, Cell, Operation, Polyomino, Puzzle};
+use kenken::{Cage, Cell, Operation, Polyomino, Puzzle, random_merge_split};
 
 use crate::view::{DraftCage, OpKind};
 
@@ -156,6 +156,89 @@ pub fn do_merge_cages(
 
     let intermediate = puzzle.clone().remove_cage(&poly_a).remove_cage(&poly_b);
     reinsert_or_draft(intermediate, merged, op, n)
+}
+
+pub fn do_flip_cell(
+    puzzle: &Puzzle,
+    cell: (usize, usize),
+    target_anchor: (usize, usize),
+) -> Result<(Puzzle, Vec<DraftCage>), String> {
+    let n = puzzle_size_u8(puzzle)?;
+    let cell_obj = Cell::new(cell.0, cell.1);
+
+    let src_cage = puzzle
+        .cage_at(cell_obj)
+        .ok_or_else(|| format!("no cage at ({}, {})", cell.0, cell.1))?;
+    let src_op = src_cage.operation();
+    let src_poly = src_cage.polyomino().clone();
+
+    let tgt_cage = cage_at_or_err(puzzle, target_anchor)?;
+    if tgt_cage.polyomino() == &src_poly {
+        return Err("cell is already in target cage".into());
+    }
+    let tgt_op = tgt_cage.operation();
+    let tgt_poly = tgt_cage.polyomino().clone();
+
+    let new_tgt_poly = tgt_poly.extend(cell_obj).map_err(|e| format!("{e:?}"))?;
+
+    let intermediate = puzzle.clone().remove_cage(&src_poly).remove_cage(&tgt_poly);
+    let mut drafts = Vec::new();
+
+    let next = if src_poly.len() == 1 {
+        intermediate
+    } else {
+        let new_src_poly = src_poly.without(cell_obj).map_err(|e| format!("{e:?}"))?;
+        if op_legal_for_size(src_op, new_src_poly.len()) {
+            intermediate
+                .insert_cage(Cage::new(n, new_src_poly, src_op))
+                .map_err(|e| format!("{e:?}"))?
+        } else {
+            drafts.push(DraftCage {
+                cells: cells_to_vec(&new_src_poly),
+            });
+            intermediate
+        }
+    };
+
+    if op_legal_for_size(tgt_op, new_tgt_poly.len()) {
+        let next = next
+            .insert_cage(Cage::new(n, new_tgt_poly, tgt_op))
+            .map_err(|e| format!("{e:?}"))?;
+        Ok((next, drafts))
+    } else {
+        drafts.push(DraftCage {
+            cells: cells_to_vec(&new_tgt_poly),
+        });
+        Ok((next, drafts))
+    }
+}
+
+pub fn do_random_merge_split_cages(
+    puzzle: &Puzzle,
+    a_anchor: (usize, usize),
+    b_anchor: (usize, usize),
+    rng: &mut impl rand::Rng,
+) -> Result<(Puzzle, Vec<DraftCage>), String> {
+    let cage_a = cage_at_or_err(puzzle, a_anchor)?;
+    let cage_b = cage_at_or_err(puzzle, b_anchor)?;
+    if cage_a.polyomino() == cage_b.polyomino() {
+        return Err("cages are the same".into());
+    }
+    let poly_a = cage_a.polyomino().clone();
+    let poly_b = cage_b.polyomino().clone();
+
+    let (q1, q2) = random_merge_split(&poly_a, &poly_b, rng).map_err(|e| format!("{e:?}"))?;
+
+    let next = puzzle.clone().remove_cage(&poly_a).remove_cage(&poly_b);
+    let drafts = vec![
+        DraftCage {
+            cells: cells_to_vec(&q1),
+        },
+        DraftCage {
+            cells: cells_to_vec(&q2),
+        },
+    ];
+    Ok((next, drafts))
 }
 
 #[cfg(test)]
@@ -423,5 +506,134 @@ mod tests {
             .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
             .unwrap();
         assert!(do_merge_cages(&p, (0, 0), (3, 3)).is_err());
+    }
+
+    #[test]
+    fn flip_cell_moves_cell_between_cages() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 0), (1, 1)], 5, 4))
+            .unwrap();
+        let (next, drafts) = do_flip_cell(&p, (0, 0), (1, 0)).unwrap();
+        assert!(drafts.is_empty());
+        assert_eq!(next.cages().count(), 2);
+        let src = next.cage_at(Cell::new(0, 1)).unwrap();
+        assert_eq!(src.cells().len(), 1);
+        let tgt = next.cage_at(Cell::new(0, 0)).unwrap();
+        assert_eq!(tgt.cells().len(), 3);
+    }
+
+    #[test]
+    fn flip_cell_returns_draft_when_src_op_invalid() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(sub_cage(&[(0, 0), (0, 1)], 1, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 0), (1, 1)], 5, 4))
+            .unwrap();
+        let (next, drafts) = do_flip_cell(&p, (0, 0), (1, 0)).unwrap();
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].cells, vec![(0, 1)]);
+        assert_eq!(next.cages().count(), 1);
+    }
+
+    #[test]
+    fn flip_cell_returns_draft_when_tgt_op_invalid() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(sub_cage(&[(1, 0), (1, 1)], 1, 4))
+            .unwrap();
+        let (next, drafts) = do_flip_cell(&p, (0, 0), (1, 0)).unwrap();
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(next.cages().count(), 1);
+        let src = next.cage_at(Cell::new(0, 1)).unwrap();
+        assert_eq!(src.cells().len(), 1);
+    }
+
+    #[test]
+    fn flip_cell_removes_singleton_src_without_draft() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(given_cage((0, 0), 1, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 0), (1, 1)], 5, 4))
+            .unwrap();
+        let (next, drafts) = do_flip_cell(&p, (0, 0), (1, 0)).unwrap();
+        assert!(drafts.is_empty());
+        assert_eq!(next.cages().count(), 1);
+        let tgt = next.cage_at(Cell::new(0, 0)).unwrap();
+        assert_eq!(tgt.cells().len(), 3);
+    }
+
+    #[test]
+    fn flip_cell_errors_when_cell_not_in_cage() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 0), (1, 1)], 5, 4))
+            .unwrap();
+        assert!(do_flip_cell(&p, (0, 0), (1, 0)).is_err());
+    }
+
+    #[test]
+    fn flip_cell_errors_when_target_not_in_cage() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap();
+        assert!(do_flip_cell(&p, (0, 0), (1, 0)).is_err());
+    }
+
+    #[test]
+    fn flip_cell_errors_when_cell_already_in_target_cage() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap();
+        assert!(do_flip_cell(&p, (0, 0), (0, 1)).is_err());
+    }
+
+    #[test]
+    fn random_merge_split_cages_produces_two_drafts() {
+        use rand::SeedableRng;
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 0), (1, 1)], 5, 4))
+            .unwrap();
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
+        let (next, drafts) = do_random_merge_split_cages(&p, (0, 0), (1, 0), &mut rng).unwrap();
+        assert_eq!(drafts.len(), 2);
+        assert_eq!(next.cages().count(), 0);
+        let total: usize = drafts.iter().map(|d| d.cells.len()).sum();
+        assert_eq!(total, 4);
+    }
+
+    #[test]
+    fn random_merge_split_cages_errors_when_not_adjacent() {
+        use rand::SeedableRng;
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(2, 0), (2, 1)], 5, 4))
+            .unwrap();
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
+        assert!(do_random_merge_split_cages(&p, (0, 0), (2, 0), &mut rng).is_err());
+    }
+
+    #[test]
+    fn random_merge_split_cages_errors_when_same_cage() {
+        use rand::SeedableRng;
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap();
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
+        assert!(do_random_merge_split_cages(&p, (0, 0), (0, 1), &mut rng).is_err());
     }
 }

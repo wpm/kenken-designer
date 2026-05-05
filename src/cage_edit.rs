@@ -126,24 +126,28 @@ fn remove_from_draft(draft: Option<&DraftCage>, cell: (usize, usize)) -> Option<
     (!cells.is_empty()).then_some(DraftCage { cells })
 }
 
-/// Augmented cage list for rendering: committed cages plus (optionally) the
-/// draft appended at the end. The returned `draft_idx` points to the draft's
-/// position when present.
+/// Augmented cage list for rendering: committed cages plus any drafts appended at the end.
+/// The returned `first_draft_idx` points to the first draft's position when present.
 #[must_use]
 pub fn effective_cages(
     view: &PuzzleView,
-    draft: Option<&DraftCage>,
+    drafts: &[DraftCage],
 ) -> (Vec<CageView>, Option<usize>) {
     let mut cages = view.cages.clone();
-    let draft_idx = draft.map(|d| {
-        cages.push(CageView {
-            cells: d.cells.clone(),
-            op: crate::app::OpKind::Add,
-            target: 0,
-        });
-        cages.len() - 1
-    });
-    (cages, draft_idx)
+    let first_draft_idx = if drafts.is_empty() {
+        None
+    } else {
+        let idx = cages.len();
+        for d in drafts {
+            cages.push(CageView {
+                cells: d.cells.clone(),
+                op: crate::app::OpKind::Add,
+                target: 0,
+            });
+        }
+        Some(idx)
+    };
+    (cages, first_draft_idx)
 }
 
 #[cfg(test)]
@@ -323,16 +327,28 @@ mod tests {
     fn effective_cages_appends_draft_at_end_with_index() {
         let v = view(3, vec![cage(&[(0, 0)]), cage(&[(2, 2)])]);
         let d = draft(&[(1, 1)]);
-        let (eff, draft_idx) = effective_cages(&v, Some(&d));
+        let (eff, draft_idx) = effective_cages(&v, &[d]);
         assert_eq!(eff.len(), 3);
         assert_eq!(eff[2].cells, vec![(1, 1)]);
         assert_eq!(draft_idx, Some(2));
     }
 
     #[test]
+    fn effective_cages_appends_multiple_drafts() {
+        let v = view(3, vec![cage(&[(0, 0)])]);
+        let d1 = draft(&[(1, 1)]);
+        let d2 = draft(&[(2, 2)]);
+        let (eff, draft_idx) = effective_cages(&v, &[d1, d2]);
+        assert_eq!(eff.len(), 3);
+        assert_eq!(eff[1].cells, vec![(1, 1)]);
+        assert_eq!(eff[2].cells, vec![(2, 2)]);
+        assert_eq!(draft_idx, Some(1));
+    }
+
+    #[test]
     fn effective_cages_returns_none_index_when_no_draft() {
         let v = view(3, vec![cage(&[(0, 0)])]);
-        let (eff, draft_idx) = effective_cages(&v, None);
+        let (eff, draft_idx) = effective_cages(&v, &[]);
         assert_eq!(eff.len(), 1);
         assert_eq!(draft_idx, None);
     }
