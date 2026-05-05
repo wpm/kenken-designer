@@ -1,4 +1,5 @@
 mod app;
+mod cage_band;
 mod cage_colors;
 mod cage_edit;
 mod cage_index;

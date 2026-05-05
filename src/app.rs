@@ -1,3 +1,4 @@
+use crate::cage_band::CageBand;
 use crate::cage_edit::{delete_at, escape_at, shift_arrow, splinter_at, CageEdit};
 use crate::cage_index::{cage_anchor, cage_at, cells_anchor};
 use crate::context_menu::{menu_items_for, ContextMenuItems, MenuContext};
@@ -301,8 +302,37 @@ pub fn App() -> impl IntoView {
         context_menu,
     );
 
+    // Single derivation that reads puzzle + active_cage once and produces both
+    // the anchor and the cell list needed by the cage band.
+    let active_cage_info = Signal::derive(move || {
+        puzzle.with(|opt| {
+            opt.as_ref().and_then(|v| {
+                active_cage
+                    .get()
+                    .and_then(|idx| v.cages.get(idx))
+                    .map(|c| (cage_anchor(c), c.cells.clone()))
+            })
+        })
+    });
+    let active_cage_anchor =
+        Signal::derive(move || active_cage_info.get().map(|(anchor, _)| anchor));
+    let active_cage_cells = Signal::derive(move || {
+        active_cage_info
+            .get()
+            .map_or_else(Vec::new, |(_, cells)| cells)
+    });
+
+    let on_band_commit = Callback::new(move |view: PuzzleView| {
+        set_puzzle.set(Some(view));
+    });
+
     view! {
         <main class="app-main">
+            <CageBand
+                active_cage_anchor=active_cage_anchor
+                active_cage_cells=active_cage_cells
+                on_commit=on_band_commit
+            />
             {move || {
                 let view = puzzle.get()?;
                 let drafts_value = drafts.get();

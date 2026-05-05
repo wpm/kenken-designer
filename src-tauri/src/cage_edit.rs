@@ -29,7 +29,7 @@ fn cells_to_vec(poly: &Polyomino) -> Vec<(usize, usize)> {
     poly.as_slice().iter().map(|c| (c.row, c.column)).collect()
 }
 
-fn cage_at_or_err(puzzle: &Puzzle, anchor: (usize, usize)) -> Result<&Cage, String> {
+pub fn cage_at_or_err(puzzle: &Puzzle, anchor: (usize, usize)) -> Result<&Cage, String> {
     puzzle
         .cage_at(Cell::new(anchor.0, anchor.1))
         .ok_or_else(|| format!("no cage at ({}, {})", anchor.0, anchor.1))
