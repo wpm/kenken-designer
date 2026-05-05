@@ -103,18 +103,19 @@ enum Axis {
 #[allow(clippy::needless_pass_by_value)]
 pub fn Grid(
     view: PuzzleView,
-    draft: Option<DraftCage>,
+    drafts: Vec<DraftCage>,
     size: u32,
     cursor: Signal<(usize, usize)>,
     active_cage: Signal<Option<usize>>,
     on_cell_click: Callback<(usize, usize)>,
+    on_cell_right_click: Callback<(usize, usize, f64, f64)>,
     entry: Signal<Option<OperatorEntry>>,
 ) -> impl IntoView {
     let n = view.n;
     debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
 
     let layout = Layout::new(n, size);
-    let (effective, draft_idx) = effective_cages(&view, draft.as_ref());
+    let (effective, draft_idx) = effective_cages(&view, &drafts);
     let palette_idx = assign_cage_colors(n, &effective, CAGE_PALETTE.len());
     let cell_cage = build_cell_cage_map(n, &effective);
 
@@ -134,7 +135,7 @@ pub fn Grid(
 
     let cursor_rect = move || cursor_rect_view(cursor.get(), layout, entry.get().is_some());
 
-    let click_overlay = render_click_overlay(layout, on_cell_click);
+    let click_overlay = render_click_overlay(layout, on_cell_click, on_cell_right_click);
 
     view! {
         <svg
@@ -211,6 +212,7 @@ fn cursor_rect_view(cursor: (usize, usize), layout: Layout, in_entry: bool) -> i
 fn render_click_overlay(
     layout: Layout,
     on_cell_click: Callback<(usize, usize)>,
+    on_cell_right_click: Callback<(usize, usize, f64, f64)>,
 ) -> Vec<impl IntoView> {
     let n = layout.n;
     let cell = layout.cell;
@@ -229,6 +231,10 @@ fn render_click_overlay(
                         if ev.button() == 0 {
                             on_cell_click.run((r, c));
                         }
+                    }
+                    on:contextmenu=move |ev: leptos::ev::MouseEvent| {
+                        ev.prevent_default();
+                        on_cell_right_click.run((r, c, ev.client_x().into(), ev.client_y().into()));
                     }
                 />
             }
@@ -377,14 +383,15 @@ fn render_op_labels(
             let (cell_x, cell_y) = layout.origin(r, c);
             let label_x = cell_x + OP_INSET;
             let label_y = cell_y + OP_INSET;
-            let is_draft = Some(i) == draft_idx;
+            let is_draft = draft_idx.is_some_and(|di| i >= di);
+            let is_active_draft = draft_idx.is_some_and(|di| i == di);
             let cage_op = cage.op;
             let cage_target = cage.target;
             let label = move || {
                 let entry_val = entry.get();
                 let is_entry_cage = entry_val.as_ref().is_some_and(|e| match &e.cage {
                     ActiveCage::Committed(idx) => *idx == i,
-                    ActiveCage::Draft => is_draft,
+                    ActiveCage::Draft => is_active_draft,
                 });
                 if let Some(e) = entry_val.filter(|_| is_entry_cage) {
                     let glyph = e.op.map_or("", op_glyph);

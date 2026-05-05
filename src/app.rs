@@ -1,5 +1,6 @@
 use crate::cage_edit::{delete_at, escape_at, shift_arrow, splinter_at, CageEdit};
 use crate::cage_index::{cage_anchor, cage_at, cells_anchor};
+use crate::context_menu::{menu_items_for, ContextMenuItems, MenuContext};
 use crate::grid::Grid;
 use crate::navigation::{move_cursor, next_state, NavKey};
 use crate::operator_entry::{step as operator_step, ActiveCage, OperatorEntry, Step};
@@ -69,6 +70,20 @@ struct MergeCagesArgs {
     b_anchor: (usize, usize),
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlipCellArgs {
+    pub cell: (usize, usize),
+    pub target_anchor: (usize, usize),
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RandomMergeSplitCagesArgs {
+    pub a_anchor: (usize, usize),
+    pub b_anchor: (usize, usize),
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PuzzleView {
     pub n: usize,
@@ -100,7 +115,7 @@ pub struct DraftCage {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EditResult {
     pub view: PuzzleView,
-    pub draft: Option<DraftCage>,
+    pub drafts: Vec<DraftCage>,
 }
 
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
@@ -111,7 +126,7 @@ async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
 }
 
 #[allow(clippy::future_not_send)]
-async fn call_edit<A: Serialize>(cmd: &str, args: A) -> Option<EditResult> {
+pub async fn call_edit<A: Serialize>(cmd: &str, args: A) -> Option<EditResult> {
     let args = serde_wasm_bindgen::to_value(&args).ok()?;
     let value = invoke(cmd, args).await;
     serde_wasm_bindgen::from_value(value).ok()
@@ -193,13 +208,23 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ContextMenuState {
+    pub x: f64,
+    pub y: f64,
+    pub cell: (usize, usize),
+    pub items: ContextMenuItems,
+}
+
 #[component]
+#[allow(clippy::too_many_lines)]
 pub fn App() -> impl IntoView {
     let (puzzle, set_puzzle) = signal::<Option<PuzzleView>>(None);
     let cursor = RwSignal::new((0_usize, 0_usize));
     let active_cage = RwSignal::new(None::<usize>);
-    let draft = RwSignal::new(None::<DraftCage>);
+    let drafts = RwSignal::new(Vec::<DraftCage>::new());
     let entry = RwSignal::new(None::<OperatorEntry>);
+    let context_menu = RwSignal::new(None::<ContextMenuState>);
 
     refresh_from(set_puzzle, Box::pin(call("get_state", NoArgs {})));
     listen_for_puzzle_updates(set_puzzle);
@@ -210,7 +235,8 @@ pub fn App() -> impl IntoView {
         };
         cursor.set((0, 0));
         active_cage.set(None);
-        set_draft_if_changed(draft, None);
+        set_drafts_if_changed(drafts, vec![]);
+        context_menu.set(None);
         refresh_from(
             set_puzzle,
             Box::pin(call("new_puzzle", NewPuzzleArgs { n })),
@@ -224,6 +250,7 @@ pub fn App() -> impl IntoView {
     };
 
     let on_cell_click = Callback::new(move |(r, c): (usize, usize)| {
+        context_menu.set(None);
         if cursor.get_untracked() != (r, c) {
             cursor.set((r, c));
         }
@@ -231,27 +258,88 @@ pub fn App() -> impl IntoView {
         if active_cage.get_untracked() != next_active {
             active_cage.set(next_active);
         }
+        let swapped = drafts.with_untracked(|ds| {
+            let i = ds.iter().position(|d| d.cells.contains(&(r, c)))?;
+            if i == 0 {
+                return None;
+            }
+            let mut v = ds.clone();
+            v.swap(0, i);
+            Some(v)
+        });
+        if let Some(v) = swapped {
+            drafts.set(v);
+        }
     });
 
-    install_keydown_handler(puzzle, set_puzzle, cursor, active_cage, draft, entry);
+    let on_cell_right_click = Callback::new(move |(r, c, x, y): (usize, usize, f64, f64)| {
+        cursor.set((r, c));
+        let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+        if active_cage.get_untracked() != next_active {
+            active_cage.set(next_active);
+        }
+        let items = puzzle.with_untracked(|opt| {
+            opt.as_ref().map(|v| {
+                let ds = drafts.with_untracked(Clone::clone);
+                menu_items_for(&MenuContext {
+                    cell: (r, c),
+                    view: v.clone(),
+                    drafts: ds,
+                })
+            })
+        });
+        if let Some(items) = items {
+            context_menu.set(Some(ContextMenuState {
+                x,
+                y,
+                cell: (r, c),
+                items,
+            }));
+        }
+    });
+
+    install_keydown_handler(
+        puzzle,
+        set_puzzle,
+        cursor,
+        active_cage,
+        drafts,
+        entry,
+        context_menu,
+    );
 
     view! {
         <main class="app-main">
             {move || {
                 let view = puzzle.get()?;
-                let draft_value = draft.get();
+                let drafts_value = drafts.get();
                 Some(view! {
                     <Grid
                         view=view
-                        draft=draft_value
+                        drafts=drafts_value
                         size=560
                         cursor=cursor.into()
                         active_cage=active_cage.into()
                         on_cell_click=on_cell_click
+                        on_cell_right_click=on_cell_right_click
                         entry=entry.into()
                     />
                 })
             }}
+            {move || context_menu.get().map(|state| {
+                view! {
+                    <crate::context_menu_view::ContextMenu
+                        state=state
+                        puzzle=puzzle
+                        set_puzzle=set_puzzle
+                        drafts=drafts
+                        active_cage=active_cage
+                        cursor=cursor
+                        entry=entry
+                        on_close=Callback::new(move |()| context_menu.set(None))
+                    />
+                }
+            })}
             <div class="size-control">
                 <label>
                     "Size: "
@@ -276,21 +364,28 @@ fn install_keydown_handler(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,
-    draft: RwSignal<Option<DraftCage>>,
+    drafts: RwSignal<Vec<DraftCage>>,
     entry: RwSignal<Option<OperatorEntry>>,
+    context_menu: RwSignal<Option<ContextMenuState>>,
 ) {
     window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
         if let Some(current_entry) = entry.get_untracked() {
             ev.prevent_default();
-            handle_entry_key(puzzle, set_puzzle, draft, entry, current_entry, &ev.key());
+            handle_entry_key(puzzle, set_puzzle, drafts, entry, current_entry, &ev.key());
             return;
         }
 
         let modifier = ev.meta_key() || ev.ctrl_key();
         let key = ev.key();
 
+        if key == "Escape" && context_menu.with_untracked(Option::is_some) {
+            ev.prevent_default();
+            context_menu.set(None);
+            return;
+        }
+
         if key == "Enter" && !ev.shift_key() && !modifier && !is_text_input_focused() {
-            handle_enter_key(puzzle, cursor, draft, entry, &ev);
+            handle_enter_key(puzzle, cursor, drafts, entry, &ev);
             return;
         }
 
@@ -300,13 +395,13 @@ fn install_keydown_handler(
             KeyAction::Undo => {
                 ev.prevent_default();
                 refresh_from_then(set_puzzle, Box::pin(call("undo", NoArgs {})), move || {
-                    set_draft_if_changed(draft, None);
+                    set_drafts_if_changed(drafts, vec![]);
                 });
             }
             KeyAction::Redo => {
                 ev.prevent_default();
                 refresh_from_then(set_puzzle, Box::pin(call("redo", NoArgs {})), move || {
-                    set_draft_if_changed(draft, None);
+                    set_drafts_if_changed(drafts, vec![]);
                 });
             }
             KeyAction::Navigate(nav_key) => {
@@ -315,19 +410,19 @@ fn install_keydown_handler(
             }
             KeyAction::ShiftArrow(nav_key) => {
                 ev.prevent_default();
-                handle_shift_arrow(puzzle, set_puzzle, cursor, active_cage, draft, nav_key);
+                handle_shift_arrow(puzzle, set_puzzle, cursor, active_cage, drafts, nav_key);
             }
             KeyAction::Escape => {
                 ev.prevent_default();
-                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, draft, escape_at);
+                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, drafts, escape_at);
             }
             KeyAction::Delete => {
                 ev.prevent_default();
-                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, draft, delete_at);
+                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, drafts, delete_at);
             }
             KeyAction::Splinter => {
                 ev.prevent_default();
-                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, draft, splinter_at);
+                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, drafts, splinter_at);
             }
         }
     });
@@ -336,7 +431,7 @@ fn install_keydown_handler(
 fn handle_entry_key(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
-    draft: RwSignal<Option<DraftCage>>,
+    drafts: RwSignal<Vec<DraftCage>>,
     entry: RwSignal<Option<OperatorEntry>>,
     current_entry: OperatorEntry,
     key: &str,
@@ -345,7 +440,7 @@ fn handle_entry_key(
         opt.as_ref().is_some_and(|v| match &current_entry.cage {
             ActiveCage::Committed(idx) => v.cages.get(*idx).is_some_and(|c| c.cells.len() == 1),
             ActiveCage::Draft => {
-                draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.cells.len() == 1))
+                drafts.with_untracked(|ds| ds.first().is_some_and(|d| d.cells.len() == 1))
             }
         })
     });
@@ -355,13 +450,14 @@ fn handle_entry_key(
         Step::Cancel => entry.set(None),
         Step::Commit { op, target } => match cage {
             ActiveCage::Draft => {
-                let cells = draft
-                    .with_untracked(|d| d.as_ref().map(|d| d.cells.clone()).unwrap_or_default());
+                let cells = drafts
+                    .with_untracked(|ds| ds.first().map(|d| d.cells.clone()).unwrap_or_default());
+                let remaining_drafts = drafts.with_untracked(|ds| ds[1..].to_vec());
                 refresh_from_then(
                     set_puzzle,
                     Box::pin(call("insert_cage", InsertCageArgs { cells, op, target })),
                     move || {
-                        set_draft_if_changed(draft, None);
+                        set_drafts_if_changed(drafts, remaining_drafts);
                         entry.set(None);
                     },
                 );
@@ -387,7 +483,7 @@ fn handle_entry_key(
 fn handle_enter_key(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
-    draft: RwSignal<Option<DraftCage>>,
+    drafts: RwSignal<Vec<DraftCage>>,
     entry: RwSignal<Option<OperatorEntry>>,
     ev: &KeyboardEvent,
 ) {
@@ -416,7 +512,7 @@ fn handle_enter_key(
         }));
         return;
     }
-    let draft_anchor = draft.with_untracked(|d| d.as_ref().map(|d| cells_anchor(&d.cells)));
+    let draft_anchor = drafts.with_untracked(|ds| ds.first().map(|d| cells_anchor(&d.cells)));
     if let Some(anchor) = draft_anchor {
         ev.prevent_default();
         cursor.set(anchor);
@@ -461,7 +557,7 @@ fn handle_shift_arrow(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,
-    draft: RwSignal<Option<DraftCage>>,
+    drafts: RwSignal<Vec<DraftCage>>,
     nav_key: NavKey,
 ) {
     let at = cursor.get_untracked();
@@ -471,13 +567,13 @@ fn handle_shift_arrow(
         if neighbor == at {
             return None;
         }
-        let action = draft.with_untracked(|d| shift_arrow(at, neighbor, v, d.as_ref()));
+        let action = drafts.with_untracked(|ds| shift_arrow(at, neighbor, v, ds.first()));
         Some((neighbor, action))
     });
     let Some((neighbor, action)) = action else {
         return;
     };
-    apply_edit(set_puzzle, draft, active_cage, action);
+    apply_edit(set_puzzle, drafts, active_cage, action);
     if cursor.get_untracked() != neighbor {
         cursor.set(neighbor);
     }
@@ -489,32 +585,34 @@ fn handle_cell_action(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,
-    draft: RwSignal<Option<DraftCage>>,
+    drafts: RwSignal<Vec<DraftCage>>,
     branch: fn((usize, usize), &PuzzleView, Option<&DraftCage>) -> CageEdit,
 ) {
     let at = cursor.get_untracked();
     let action = puzzle.with_untracked(|opt| {
         opt.as_ref()
-            .map(|v| draft.with_untracked(|d| branch(at, v, d.as_ref())))
+            .map(|v| drafts.with_untracked(|ds| branch(at, v, ds.first())))
     });
     let Some(action) = action else { return };
-    apply_edit(set_puzzle, draft, active_cage, action);
+    apply_edit(set_puzzle, drafts, active_cage, action);
     sync_active_cage(puzzle, cursor, active_cage);
 }
 
-fn apply_edit(
+pub fn apply_edit(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
-    draft: RwSignal<Option<DraftCage>>,
+    drafts: RwSignal<Vec<DraftCage>>,
     active_cage: RwSignal<Option<usize>>,
     action: CageEdit,
 ) {
     match action {
         CageEdit::Noop => {}
-        CageEdit::SetDraft(d) => set_draft_if_changed(draft, d),
+        CageEdit::SetDraft(d) => {
+            set_drafts_if_changed(drafts, d.into_iter().collect());
+        }
         CageEdit::ExtendCage { anchor, cell } => {
             dispatch_edit(
                 set_puzzle,
-                draft,
+                drafts,
                 Box::pin(call_edit("extend_cage", ExtendCageArgs { anchor, cell })),
                 None,
             );
@@ -522,7 +620,7 @@ fn apply_edit(
         CageEdit::MergeCages { a_anchor, b_anchor } => {
             dispatch_edit(
                 set_puzzle,
-                draft,
+                drafts,
                 Box::pin(call_edit(
                     "merge_cages",
                     MergeCagesArgs { a_anchor, b_anchor },
@@ -533,7 +631,7 @@ fn apply_edit(
         CageEdit::ShrinkCage(cell) => {
             dispatch_edit(
                 set_puzzle,
-                draft,
+                drafts,
                 Box::pin(call_edit("shrink_cage", CellArgs { cell })),
                 None,
             );
@@ -541,7 +639,7 @@ fn apply_edit(
         CageEdit::SplinterFromCommitted(cell) => {
             dispatch_edit(
                 set_puzzle,
-                draft,
+                drafts,
                 Box::pin(call_edit("shrink_cage", CellArgs { cell })),
                 Some(DraftCage { cells: vec![cell] }),
             );
@@ -554,35 +652,35 @@ fn apply_edit(
                     if active_cage.get_untracked().is_some() {
                         active_cage.set(None);
                     }
-                    set_draft_if_changed(draft, None);
+                    set_drafts_if_changed(drafts, vec![]);
                 },
             );
         }
     }
 }
 
-fn set_draft_if_changed(draft: RwSignal<Option<DraftCage>>, next: Option<DraftCage>) {
-    if draft.with_untracked(|d| d != &next) {
-        draft.set(next);
+fn set_drafts_if_changed(drafts: RwSignal<Vec<DraftCage>>, next: Vec<DraftCage>) {
+    if drafts.with_untracked(|d| d != &next) {
+        drafts.set(next);
     }
 }
 
-fn dispatch_edit(
+pub fn dispatch_edit(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
-    draft: RwSignal<Option<DraftCage>>,
+    drafts: RwSignal<Vec<DraftCage>>,
     fut: Pin<Box<dyn Future<Output = Option<EditResult>>>>,
     override_draft: Option<DraftCage>,
 ) {
     spawn_local(async move {
         if let Some(result) = fut.await {
             set_puzzle.set(Some(result.view));
-            let next_draft = override_draft.or(result.draft);
-            set_draft_if_changed(draft, next_draft);
+            let next_drafts = override_draft.map_or(result.drafts, |d| vec![d]);
+            set_drafts_if_changed(drafts, next_drafts);
         }
     });
 }
 
-fn sync_active_cage(
+pub fn sync_active_cage(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,

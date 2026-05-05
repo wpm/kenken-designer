@@ -33,11 +33,11 @@ pub struct DraftCage {
     pub cells: Vec<(usize, usize)>,
 }
 
-/// Result of a shape-editing command: the puzzle view plus an optional draft cage.
+/// Result of a shape-editing command: the puzzle view plus zero or more draft cages.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct EditResult {
     pub view: PuzzleView,
-    pub draft: Option<DraftCage>,
+    pub drafts: Vec<DraftCage>,
 }
 
 fn split_operation(op: Operation) -> (OpKind, u32) {
