@@ -63,7 +63,8 @@ const BTN_WIDTH: u32 = 28;
 /// Total width each thumbnail occupies including gap.
 const THUMB_STEP: u32 = THUMB_SIZE + THUMB_GAP;
 
-/// How many thumbnails fit side-by-side in the band (usable width ≈ 600px minus two buttons).
+/// How many thumbnails fit side-by-side in the band.
+/// Derived from `.cage-band { max-width: 640px }` minus 2×8px padding, 2×4px gap, `2×BTN_WIDTH`.
 #[allow(clippy::cast_possible_truncation)] // THUMB_STEP is small; quotient fits in usize
 const VISIBLE_COUNT: usize = ((600 - 2 * BTN_WIDTH) / THUMB_STEP) as usize;
 
@@ -80,7 +81,7 @@ const THUMB_ACTIVE_OPACITY: &str = "0.22";
 fn Thumbnail(
     rt: RankedTuple,
     active_cells: Vec<(usize, usize)>,
-    selected: bool,
+    selected: Signal<bool>,
     on_click: Callback<()>,
 ) -> impl IntoView {
     let n = rt.view.n;
@@ -248,7 +249,13 @@ fn Thumbnail(
 
     let outer_size = usize_to_f64(n) * cell_px;
 
-    let ring_stroke = if selected { ACCENT } else { "transparent" };
+    let ring_stroke = move || {
+        if selected.get() {
+            ACCENT
+        } else {
+            "transparent"
+        }
+    };
 
     view! {
         <svg
@@ -428,7 +435,7 @@ pub fn CageBand(
                                     <Thumbnail
                                         rt=rt
                                         active_cells=cells_clone
-                                        selected=is_selected()
+                                        selected=Signal::derive(is_selected)
                                         on_click=Callback::new(move |()| {
                                             let prev = selected_idx.get_untracked();
                                             selected_idx.set(if prev == Some(i) { None } else { Some(i) });
