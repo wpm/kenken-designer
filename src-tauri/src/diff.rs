@@ -3,6 +3,7 @@ use kenken::{N, Puzzle};
 /// Per-cell change between two puzzle states.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CellDiff {
+    /// (row, column)
     pub cell: (usize, usize),
     pub removed: Vec<N>,
     pub added: Vec<N>,
@@ -14,6 +15,7 @@ pub struct PuzzleDiff {
 }
 
 impl PuzzleDiff {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
