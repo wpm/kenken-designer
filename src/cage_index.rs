@@ -9,7 +9,12 @@ pub fn cage_at(view: &PuzzleView, r: usize, c: usize) -> Option<usize> {
 
 #[must_use]
 pub fn cage_anchor(cage: &CageView) -> (usize, usize) {
-    cage.cells
+    cells_anchor(&cage.cells)
+}
+
+#[must_use]
+pub fn cells_anchor(cells: &[(usize, usize)]) -> (usize, usize) {
+    cells
         .iter()
         .min_by_key(|&&(r, c)| (r, c))
         .copied()

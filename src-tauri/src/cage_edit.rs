@@ -89,6 +89,19 @@ pub fn do_remove_cage(puzzle: &Puzzle, anchor: (usize, usize)) -> Result<Puzzle,
     Ok(puzzle.clone().remove_cage(&poly))
 }
 
+pub fn do_set_cage_operation(
+    puzzle: &Puzzle,
+    anchor: (usize, usize),
+    op: OpKind,
+    target: u32,
+) -> Result<Puzzle, String> {
+    let cage = cage_at_or_err(puzzle, anchor)?;
+    let cells = cells_to_vec(cage.polyomino());
+    let poly = cage.polyomino().clone();
+    let puzzle = puzzle.clone().remove_cage(&poly);
+    do_insert_cage(&puzzle, &cells, op, target)
+}
+
 pub fn do_extend_cage(
     puzzle: &Puzzle,
     anchor: (usize, usize),
@@ -383,6 +396,24 @@ mod tests {
             .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
             .unwrap();
         assert!(do_merge_cages(&p, (0, 0), (0, 1)).is_err());
+    }
+
+    #[test]
+    fn do_set_cage_operation_replaces_op_and_target() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap();
+        let next = do_set_cage_operation(&p, (0, 0), OpKind::Mul, 12).unwrap();
+        assert_eq!(next.cages().count(), 1);
+        let cage = next.cage_at(kenken::Cell::new(0, 0)).unwrap();
+        assert!(matches!(cage.operation(), Operation::Multiply(12)));
+    }
+
+    #[test]
+    fn do_set_cage_operation_errors_when_no_cage_at_anchor() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_set_cage_operation(&p, (0, 0), OpKind::Add, 3).is_err());
     }
 
     #[test]
