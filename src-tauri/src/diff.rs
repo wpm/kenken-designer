@@ -1,4 +1,4 @@
-use kenken::{N, Puzzle};
+use kenken::{Puzzle, N};
 
 /// Per-cell change between two puzzle states.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -16,7 +16,7 @@ pub struct PuzzleDiff {
 
 impl PuzzleDiff {
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
 
@@ -24,6 +24,7 @@ impl PuzzleDiff {
     ///
     /// `removed` and `added` are sorted ascending. `changes` is sorted in row-major
     /// cell order. Cells whose fill is unchanged produce no entry.
+    #[must_use]
     pub fn between(before: &Puzzle, after: &Puzzle) -> Self {
         debug_assert_eq!(before.n(), after.n(), "puzzles must have the same n");
 
@@ -56,7 +57,7 @@ impl PuzzleDiff {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use kenken::{Cell, Delta, Values};
