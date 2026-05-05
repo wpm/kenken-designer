@@ -119,7 +119,7 @@ pub struct EditResult {
 }
 
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
-pub async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
+async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
     let args = serde_wasm_bindgen::to_value(&args).ok()?;
     let value = invoke(cmd, args).await;
     serde_wasm_bindgen::from_value(value).ok()
@@ -658,7 +658,7 @@ pub fn apply_edit(
     }
 }
 
-pub fn set_drafts_if_changed(drafts: RwSignal<Vec<DraftCage>>, next: Vec<DraftCage>) {
+fn set_drafts_if_changed(drafts: RwSignal<Vec<DraftCage>>, next: Vec<DraftCage>) {
     if drafts.with_untracked(|d| d != &next) {
         drafts.set(next);
     }

@@ -597,6 +597,17 @@ mod tests {
     }
 
     #[test]
+    fn flip_cell_errors_when_target_cage_not_adjacent() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(2, 0), (2, 1)], 5, 4))
+            .unwrap();
+        assert!(do_flip_cell(&p, (0, 0), (2, 0)).is_err());
+    }
+
+    #[test]
     fn random_merge_split_cages_produces_two_drafts() {
         use rand::SeedableRng;
         let p = Puzzle::new(4)
