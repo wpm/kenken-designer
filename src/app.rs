@@ -217,6 +217,7 @@ pub struct ContextMenuState {
 }
 
 #[component]
+#[allow(clippy::too_many_lines)]
 pub fn App() -> impl IntoView {
     let (puzzle, set_puzzle) = signal::<Option<PuzzleView>>(None);
     let cursor = RwSignal::new((0_usize, 0_usize));
@@ -279,7 +280,7 @@ pub fn App() -> impl IntoView {
         }
         let items = puzzle.with_untracked(|opt| {
             opt.as_ref().map(|v| {
-                let ds = drafts.with_untracked(|ds| ds.clone());
+                let ds = drafts.with_untracked(Clone::clone);
                 menu_items_for(&MenuContext {
                     cell: (r, c),
                     view: v.clone(),
@@ -335,7 +336,7 @@ pub fn App() -> impl IntoView {
                         active_cage=active_cage
                         cursor=cursor
                         entry=entry
-                        on_close=Callback::new(move |_| context_menu.set(None))
+                        on_close=Callback::new(move |()| context_menu.set(None))
                     />
                 }
             })}
@@ -377,7 +378,7 @@ fn install_keydown_handler(
         let modifier = ev.meta_key() || ev.ctrl_key();
         let key = ev.key();
 
-        if key == "Escape" && context_menu.with_untracked(|m| m.is_some()) {
+        if key == "Escape" && context_menu.with_untracked(Option::is_some) {
             ev.prevent_default();
             context_menu.set(None);
             return;

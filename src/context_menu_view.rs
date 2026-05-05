@@ -18,6 +18,7 @@ fn label_style() -> String {
     format!("padding:3px 14px 1px;font-size:11px;color:{INK3};pointer-events:none;")
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn item_enter(ev: leptos::ev::MouseEvent) {
     let t = ev
         .target()
@@ -27,6 +28,7 @@ fn item_enter(ev: leptos::ev::MouseEvent) {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn item_leave(ev: leptos::ev::MouseEvent) {
     let t = ev
         .target()
@@ -37,7 +39,11 @@ fn item_leave(ev: leptos::ev::MouseEvent) {
 }
 
 #[component]
-#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::too_many_arguments,
+    clippy::too_many_lines
+)]
 pub fn ContextMenu(
     state: ContextMenuState,
     puzzle: ReadSignal<Option<PuzzleView>>,
@@ -214,7 +220,7 @@ pub fn ContextMenu(
                     <div style=label_style()>"Random merge-split with\u{2026}"</div>
                     {targets.into_iter().map(|ft| {
                         let b_anchor = ft.anchor;
-                        let label = ft.label.clone();
+                        let label = ft.label;
                         let my_a_anchor = a_anchor.unwrap_or((r, c));
                         let close2 = close;
                         view! {

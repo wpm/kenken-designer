@@ -14,6 +14,7 @@ pub struct FlipTarget {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ContextMenuItems {
     pub set_operation: bool,
     pub make_singleton: bool,
@@ -43,7 +44,7 @@ pub fn menu_items_for(ctx: &MenuContext) -> ContextMenuItems {
         .any(|d| d.cells.len() == 1 && d.cells.contains(&(r, c)));
     let make_singleton = !is_committed_singleton && !is_singleton_draft;
 
-    let adjacent_targets = if let Some(src_idx) = committed_idx {
+    let adjacent_targets = committed_idx.map_or_else(Vec::new, |src_idx| {
         adjacent_committed_cages(&ctx.view, (r, c), src_idx)
             .into_iter()
             .map(|idx| {
@@ -54,9 +55,7 @@ pub fn menu_items_for(ctx: &MenuContext) -> ContextMenuItems {
                 }
             })
             .collect()
-    } else {
-        vec![]
-    };
+    });
 
     ContextMenuItems {
         set_operation,
@@ -72,13 +71,18 @@ fn adjacent_committed_cages(view: &PuzzleView, cell: (usize, usize), src_idx: us
     let n = view.n;
     let mut result: Vec<usize> = Vec::new();
 
-    for (dr, dc) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
-        let nr = r as i64 + dr;
-        let nc = c as i64 + dc;
-        if nr < 0 || nc < 0 || nr >= n as i64 || nc >= n as i64 {
+    let neighbors: &[(isize, isize)] = &[(-1, 0), (1, 0), (0, -1), (0, 1)];
+    for (dr, dc) in neighbors {
+        let Some(nr) = r.checked_add_signed(*dr) else {
+            continue;
+        };
+        let Some(nc) = c.checked_add_signed(*dc) else {
+            continue;
+        };
+        if nr >= n || nc >= n {
             continue;
         }
-        if let Some(idx) = cage_at(view, nr as usize, nc as usize) {
+        if let Some(idx) = cage_at(view, nr, nc) {
             if idx != src_idx && !result.contains(&idx) {
                 result.push(idx);
             }
@@ -88,12 +92,10 @@ fn adjacent_committed_cages(view: &PuzzleView, cell: (usize, usize), src_idx: us
 }
 
 fn cage_label(view: &PuzzleView, idx: usize) -> String {
-    if let Some(cage) = view.cages.get(idx) {
+    view.cages.get(idx).map_or_else(String::new, |cage| {
         let anchor = cage_anchor(cage);
         format!("({},{})", anchor.0, anchor.1)
-    } else {
-        String::new()
-    }
+    })
 }
 
 #[cfg(test)]
