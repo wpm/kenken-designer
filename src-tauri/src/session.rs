@@ -54,15 +54,6 @@ impl Session {
         self.redo.clear();
     }
 
-    #[cfg(test)]
-    pub const fn undo_len(&self) -> usize {
-        self.undo.len()
-    }
-
-    #[cfg(test)]
-    pub const fn redo_len(&self) -> usize {
-        self.redo.len()
-    }
 }
 
 #[cfg(test)]
