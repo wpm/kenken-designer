@@ -1,4 +1,5 @@
 - Always do test-driven development. Iterate until green.
 - When you are ready to create a pull request, run `/simplify`.
 - After making a pull request, run `/review` on it.
+- Monitor pull requests for source conflicts and CI failures. Fix them.
 - Use an isolated worktree when working locally.
