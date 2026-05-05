@@ -32,10 +32,9 @@ where
 fn rebuild_from_constraints(p: &Puzzle) -> Result<Puzzle, String> {
     let n = p.n();
     let fresh = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
-    let rebuilt = p
-        .cages()
-        .cloned()
-        .try_fold(fresh, |acc, cage| acc.insert_cage(cage).map_err(|e| format!("{e:?}")))?;
+    let rebuilt = p.cages().cloned().try_fold(fresh, |acc, cage| {
+        acc.insert_cage(cage).map_err(|e| format!("{e:?}"))
+    })?;
     Ok(rebuilt.propagate_fully())
 }
 
@@ -95,9 +94,11 @@ mod tests {
             .unwrap()
             .polyomino()
             .clone();
-        let result = apply_edit(&propagated, EditKind::Widening, |p| {
-            Ok(p.remove_cage(&poly))
-        })
+        let result = apply_edit(
+            &propagated,
+            EditKind::Widening,
+            |p| Ok(p.remove_cage(&poly)),
+        )
         .unwrap();
 
         let fill_after: Vec<u8> = result.candidates(Cell::new(0, 1)).unwrap().iter().collect();
