@@ -108,7 +108,7 @@ pub fn Grid(
     cursor: Signal<(usize, usize)>,
     active_cage: Signal<Option<usize>>,
     on_cell_click: Callback<(usize, usize)>,
-    entry: RwSignal<Option<OperatorEntry>>,
+    entry: Signal<Option<OperatorEntry>>,
 ) -> impl IntoView {
     let n = view.n;
     debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
@@ -366,7 +366,7 @@ fn render_op_labels(
     cages: &[CageView],
     draft_idx: Option<usize>,
     layout: &Layout,
-    entry: RwSignal<Option<OperatorEntry>>,
+    entry: Signal<Option<OperatorEntry>>,
 ) -> Vec<impl IntoView> {
     let op_font = layout.op_font();
     cages
@@ -387,14 +387,8 @@ fn render_op_labels(
                     ActiveCage::Draft => is_draft,
                 });
                 if let Some(e) = entry_val.filter(|_| is_entry_cage) {
-                    let op_glyph = match e.op {
-                        Some(OpKind::Add) => "+",
-                        Some(OpKind::Sub) => "\u{2212}",
-                        Some(OpKind::Mul) => "\u{00d7}",
-                        Some(OpKind::Div) => "\u{00f7}",
-                        Some(OpKind::Given) | None => "",
-                    };
-                    format!("{}{}|", op_glyph, e.digits)
+                    let glyph = e.op.map_or("", op_glyph);
+                    format!("{}{}|", glyph, e.digits)
                 } else if is_draft {
                     "?".to_string()
                 } else {
@@ -427,13 +421,20 @@ const fn is_thick_border(a: Option<usize>, b: Option<usize>) -> bool {
     matches!((a, b), (Some(x), Some(y)) if x != y)
 }
 
+const fn op_glyph(op: OpKind) -> &'static str {
+    match op {
+        OpKind::Add => "+",
+        OpKind::Sub => "\u{2212}",
+        OpKind::Mul => "\u{00d7}",
+        OpKind::Div => "\u{00f7}",
+        OpKind::Given => "",
+    }
+}
+
 fn op_label(op: OpKind, target: u32) -> String {
     match op {
-        OpKind::Add => format!("+{target}"),
-        OpKind::Sub => format!("{target}\u{2212}"),
-        OpKind::Mul => format!("{target}\u{00d7}"),
-        OpKind::Div => format!("{target}\u{00f7}"),
         OpKind::Given => format!("{target}"),
+        _ => format!("{}{target}", op_glyph(op)),
     }
 }
 

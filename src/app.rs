@@ -1,5 +1,5 @@
 use crate::cage_edit::{delete_at, escape_at, shift_arrow, splinter_at, CageEdit};
-use crate::cage_index::{cage_anchor, cage_at};
+use crate::cage_index::{cage_anchor, cage_at, cells_anchor};
 use crate::grid::Grid;
 use crate::navigation::{move_cursor, next_state, NavKey};
 use crate::operator_entry::{step as operator_step, ActiveCage, OperatorEntry, Step};
@@ -248,7 +248,7 @@ pub fn App() -> impl IntoView {
                         cursor=cursor.into()
                         active_cage=active_cage.into()
                         on_cell_click=on_cell_click
-                        entry=entry
+                        entry=entry.into()
                     />
                 })
             }}
@@ -345,8 +345,6 @@ fn install_keydown_handler(
                     })
                 })
             });
-            let draft_active = draft.with_untracked(|d| d.as_ref().map(|d| d.cells.clone()));
-
             if let Some((active_cage_val, anchor, cage_op, cage_target)) = active {
                 ev.prevent_default();
                 cursor.set(anchor);
@@ -359,19 +357,17 @@ fn install_keydown_handler(
                         String::new()
                     },
                 }));
-            } else if let Some(cells) = draft_active {
-                ev.prevent_default();
-                let anchor = cells
-                    .iter()
-                    .min_by_key(|&&(r, c)| (r, c))
-                    .copied()
-                    .unwrap_or((0, 0));
-                cursor.set(anchor);
-                entry.set(Some(OperatorEntry {
-                    cage: ActiveCage::Draft,
-                    op: None,
-                    digits: String::new(),
-                }));
+            } else {
+                let draft_cells = draft.with_untracked(|d| d.as_ref().map(|d| d.cells.clone()));
+                if let Some(cells) = draft_cells {
+                    ev.prevent_default();
+                    cursor.set(cells_anchor(&cells));
+                    entry.set(Some(OperatorEntry {
+                        cage: ActiveCage::Draft,
+                        op: None,
+                        digits: String::new(),
+                    }));
+                }
             }
             return;
         }
