@@ -2,9 +2,9 @@ use kenken::Puzzle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditKind {
-    /// Edit adds a constraint or restricts a domain. Examples: insert_cage; extend_cage.
+    /// Edit adds a constraint or restricts a domain. Examples: `insert_cage`; `extend_cage`.
     Narrowing,
-    /// Edit removes a constraint or relaxes a domain. Examples: remove_cage; shrink_cage; clear_all_cages.
+    /// Edit removes a constraint or relaxes a domain. Examples: `remove_cage`; `shrink_cage`; `clear_all_cages`.
     Widening,
 }
 
@@ -71,7 +71,7 @@ mod tests {
         );
     }
 
-    /// After removing a Given cage that forced row 0 values, widening via apply_edit must
+    /// After removing a Given cage that forced row 0 values, widening via `apply_edit` must
     /// restore the full domain to cells that were constrained by it.
     #[test]
     fn apply_edit_widening_grows_domains() {
@@ -79,13 +79,12 @@ mod tests {
         let cage = given_cage_at((0, 0), 1, 3);
         let propagated = base.insert_cage(cage).unwrap().propagate_fully();
 
-        let fill_before: Vec<u8> = propagated
-            .candidates(Cell::new(0, 1))
-            .unwrap()
-            .iter()
-            .collect();
         assert!(
-            !fill_before.contains(&1),
+            !propagated
+                .candidates(Cell::new(0, 1))
+                .unwrap()
+                .iter()
+                .any(|x| x == 1),
             "sanity: 1 should be absent from (0,1) before removal"
         );
 
@@ -101,10 +100,13 @@ mod tests {
         )
         .unwrap();
 
-        let fill_after: Vec<u8> = result.candidates(Cell::new(0, 1)).unwrap().iter().collect();
         assert!(
-            fill_after.contains(&1),
-            "1 should return to (0,1) after removing the Given cage; got {fill_after:?}"
+            result
+                .candidates(Cell::new(0, 1))
+                .unwrap()
+                .iter()
+                .any(|x| x == 1),
+            "1 should return to (0,1) after removing the Given cage"
         );
     }
 }
