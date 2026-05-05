@@ -7,7 +7,7 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(current: Puzzle) -> Self {
+    pub const fn new(current: Puzzle) -> Self {
         Self {
             current,
             undo: Vec::new(),

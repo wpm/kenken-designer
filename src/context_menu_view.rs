@@ -174,7 +174,7 @@ pub fn ContextMenu(
                 </div>
             })}
             {(!items.adjacent_targets.is_empty()).then({
-                let targets = items.adjacent_targets.clone();
+                let targets = items.adjacent_targets;
                 move || view! {
                     <div style=sep_style />
                     <div style=label_style()>"Flip to cage\u{2026}"</div>
