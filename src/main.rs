@@ -1,5 +1,6 @@
 mod app;
 mod cage_colors;
+mod cage_edit;
 mod cage_index;
 mod grid;
 mod navigation;

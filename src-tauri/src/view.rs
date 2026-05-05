@@ -14,13 +14,30 @@ pub struct CageView {
     pub target: u32,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpKind {
     Add,
     Sub,
     Mul,
     Div,
     Given,
+}
+
+/// A cage whose shape is built but whose operation is not yet set.
+///
+/// Returned from shape-editing commands when the previous cage's operation is no longer
+/// legal for the new size; the caller surfaces it as a transient draft until the user
+/// picks an operation.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DraftCage {
+    pub cells: Vec<(usize, usize)>,
+}
+
+/// Result of a shape-editing command: the puzzle view plus an optional draft cage.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct EditResult {
+    pub view: PuzzleView,
+    pub draft: Option<DraftCage>,
 }
 
 fn split_operation(op: Operation) -> (OpKind, u32) {

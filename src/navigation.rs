@@ -59,7 +59,7 @@ const fn cycle_cage_idx(active: Option<usize>, len: usize, forward: bool) -> usi
     }
 }
 
-const fn move_cursor((r, c): (usize, usize), n: usize, key: NavKey) -> (usize, usize) {
+pub const fn move_cursor((r, c): (usize, usize), n: usize, key: NavKey) -> (usize, usize) {
     let n_max = n.saturating_sub(1);
     match key {
         NavKey::ArrowUp => (r.saturating_sub(1), c),

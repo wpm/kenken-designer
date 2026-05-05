@@ -1,3 +1,4 @@
+mod cage_edit;
 mod session;
 mod view;
 
@@ -10,7 +11,7 @@ use tauri::menu::{
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use session::Session;
-use view::PuzzleView;
+use view::{DraftCage, EditResult, OpKind, PuzzleView};
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 
@@ -65,6 +66,82 @@ fn undo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
 #[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn redo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
     apply_redo(&state)
+}
+
+fn commit_view(session: &mut Session, next: Puzzle) -> PuzzleView {
+    session.commit(next);
+    PuzzleView::from(session.current())
+}
+
+fn commit_edit(session: &mut Session, next: Puzzle, draft: Option<DraftCage>) -> EditResult {
+    let view = commit_view(session, next);
+    EditResult { view, draft }
+}
+
+fn do_command<T>(
+    state: &Mutex<Session>,
+    f: impl FnOnce(&mut Session) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
+    f(&mut session)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn insert_cage(
+    cells: Vec<(usize, usize)>,
+    op: OpKind,
+    target: u32,
+    state: State<Mutex<Session>>,
+) -> Result<PuzzleView, String> {
+    do_command(&state, |session| {
+        let next = cage_edit::do_insert_cage(session.current(), &cells, op, target)?;
+        Ok(commit_view(session, next))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn remove_cage(anchor: (usize, usize), state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    do_command(&state, |session| {
+        let next = cage_edit::do_remove_cage(session.current(), anchor)?;
+        Ok(commit_view(session, next))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn extend_cage(
+    anchor: (usize, usize),
+    cell: (usize, usize),
+    state: State<Mutex<Session>>,
+) -> Result<EditResult, String> {
+    do_command(&state, |session| {
+        let (next, draft) = cage_edit::do_extend_cage(session.current(), anchor, cell)?;
+        Ok(commit_edit(session, next, draft))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn shrink_cage(cell: (usize, usize), state: State<Mutex<Session>>) -> Result<EditResult, String> {
+    do_command(&state, |session| {
+        let (next, draft) = cage_edit::do_shrink_cage(session.current(), cell)?;
+        Ok(commit_edit(session, next, draft))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn merge_cages(
+    a_anchor: (usize, usize),
+    b_anchor: (usize, usize),
+    state: State<Mutex<Session>>,
+) -> Result<EditResult, String> {
+    do_command(&state, |session| {
+        let (next, draft) = cage_edit::do_merge_cages(session.current(), a_anchor, b_anchor)?;
+        Ok(commit_edit(session, next, draft))
+    })
 }
 
 #[allow(clippy::too_many_lines)] // Per-OS submenu construction is the long part
@@ -236,7 +313,17 @@ pub fn run() {
         .manage(Mutex::new(session))
         .menu(build_app_menu)
         .on_menu_event(handle_menu_event)
-        .invoke_handler(tauri::generate_handler![new_puzzle, get_state, undo, redo])
+        .invoke_handler(tauri::generate_handler![
+            new_puzzle,
+            get_state,
+            undo,
+            redo,
+            insert_cage,
+            remove_cage,
+            extend_cage,
+            shrink_cage,
+            merge_cages
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -532,5 +619,140 @@ mod tests {
             id: tauri::menu::MenuId::new("undo"),
         };
         handle_menu_event(app.handle(), event);
+    }
+
+    fn empty_session_app(n: usize) -> tauri::App<tauri::test::MockRuntime> {
+        let app = tauri::test::mock_app();
+        app.manage(Mutex::new(Session::new(Puzzle::new(n).unwrap())));
+        app
+    }
+
+    #[test]
+    fn insert_cage_command_commits_cage_and_pushes_undo() {
+        let app = empty_session_app(4);
+        let view = insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        assert_eq!(view.cages.len(), 1);
+
+        let view_after_undo = undo(app.state::<Mutex<Session>>()).unwrap();
+        assert!(view_after_undo.cages.is_empty());
+    }
+
+    #[test]
+    fn insert_cage_command_returns_err_for_invalid_cells() {
+        let app = empty_session_app(4);
+        assert!(
+            insert_cage(vec![], OpKind::Add, 3, app.state::<Mutex<Session>>()).is_err(),
+            "empty cells should error"
+        );
+    }
+
+    #[test]
+    fn remove_cage_command_drops_cage_and_undo_restores() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let view = remove_cage((0, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(view.cages.is_empty());
+
+        let view = undo(app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.cages.len(), 1);
+    }
+
+    #[test]
+    fn remove_cage_command_returns_err_when_no_cage_at_anchor() {
+        let app = empty_session_app(4);
+        assert!(remove_cage((0, 0), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn extend_cage_command_grows_cage_in_place_for_add() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let result = extend_cage((0, 0), (0, 2), app.state::<Mutex<Session>>()).unwrap();
+        assert!(result.draft.is_none());
+        assert_eq!(result.view.cages.len(), 1);
+        assert_eq!(result.view.cages[0].cells.len(), 3);
+    }
+
+    #[test]
+    fn extend_cage_command_returns_draft_when_op_invalid_for_new_size() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Sub,
+            1,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let result = extend_cage((0, 0), (0, 2), app.state::<Mutex<Session>>()).unwrap();
+        assert!(result.view.cages.is_empty());
+        let draft = result.draft.unwrap();
+        assert_eq!(draft.cells.len(), 3);
+    }
+
+    #[test]
+    fn shrink_cage_command_removes_singleton() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0)],
+            OpKind::Given,
+            1,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let result = shrink_cage((0, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(result.view.cages.is_empty());
+        assert!(result.draft.is_none());
+    }
+
+    #[test]
+    fn shrink_cage_command_returns_err_for_uncovered_cell() {
+        let app = empty_session_app(4);
+        assert!(shrink_cage((0, 0), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn merge_cages_command_combines_two_add_cages() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let result = merge_cages((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(result.draft.is_none());
+        assert_eq!(result.view.cages.len(), 1);
+        assert_eq!(result.view.cages[0].cells.len(), 4);
     }
 }
