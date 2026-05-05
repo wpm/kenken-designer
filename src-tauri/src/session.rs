@@ -53,7 +53,6 @@ impl Session {
         self.undo.clear();
         self.redo.clear();
     }
-
 }
 
 #[cfg(test)]
