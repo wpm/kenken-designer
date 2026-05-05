@@ -4,7 +4,7 @@ mod view;
 
 use std::sync::Mutex;
 
-use kenken::{generate, Puzzle};
+use kenken::Puzzle;
 use tauri::menu::{
     AboutMetadata, IsMenuItem, Menu, MenuEvent, MenuItemBuilder, PredefinedMenuItem, Submenu,
 };
@@ -15,15 +15,10 @@ use view::{DraftCage, EditResult, OpKind, PuzzleView};
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 
-fn fresh_puzzle(n: usize) -> Result<Puzzle, String> {
-    let mut rng = rand::rng();
-    generate(n, &mut rng).map_err(|e| format!("{e:?}"))
-}
-
 fn commit_new_puzzle(state: &Mutex<Session>, n: usize) -> Result<PuzzleView, String> {
-    let next = fresh_puzzle(n)?;
+    let puzzle = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
-    session.commit(next);
+    session.replace(puzzle);
     Ok(PuzzleView::from(session.current()))
 }
 
@@ -167,21 +162,6 @@ fn flip_cell(
 ) -> Result<EditResult, String> {
     do_command(&state, |session| {
         let (next, drafts) = cage_edit::do_flip_cell(session.current(), cell, target_anchor)?;
-        Ok(commit_edit(session, next, drafts))
-    })
-}
-
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
-fn random_merge_split_cages(
-    a_anchor: (usize, usize),
-    b_anchor: (usize, usize),
-    state: State<Mutex<Session>>,
-) -> Result<EditResult, String> {
-    do_command(&state, |session| {
-        let puzzle = session.current().clone();
-        let (next, drafts) =
-            cage_edit::do_random_merge_split_cages(&puzzle, a_anchor, b_anchor, session.rng_mut())?;
         Ok(commit_edit(session, next, drafts))
     })
 }
@@ -349,7 +329,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
-    let initial = fresh_puzzle(4).expect("4 is a valid grid size");
+    let initial = Puzzle::new(4).expect("4 is a valid grid size");
     let session = Session::new(initial);
     tauri::Builder::default()
         .manage(Mutex::new(session))
@@ -367,7 +347,6 @@ pub fn run() {
             merge_cages,
             set_cage_operation,
             flip_cell,
-            random_merge_split_cages
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -381,24 +360,6 @@ pub fn run() {
 )]
 mod tests {
     use super::*;
-
-    #[test]
-    fn fresh_puzzle_returns_ok_for_valid_size() {
-        let p = fresh_puzzle(4).unwrap();
-        assert_eq!(p.n(), 4);
-    }
-
-    #[test]
-    fn fresh_puzzle_supports_minimum_size() {
-        let p = fresh_puzzle(2).unwrap();
-        assert_eq!(p.n(), 2);
-    }
-
-    #[test]
-    fn fresh_puzzle_returns_err_for_invalid_size() {
-        assert!(fresh_puzzle(0).is_err());
-        assert!(fresh_puzzle(99).is_err());
-    }
 
     #[test]
     fn apply_menu_action_undo_pops_undo_stack() {
@@ -494,12 +455,16 @@ mod tests {
     }
 
     #[test]
-    fn commit_new_puzzle_replaces_session_current() {
+    fn commit_new_puzzle_returns_empty_puzzle() {
         let state = Mutex::new(Session::new(Puzzle::new(2).unwrap()));
-        let view = commit_new_puzzle(&state, 4).unwrap();
-        assert_eq!(view.n, 4);
+        let view = commit_new_puzzle(&state, 5).unwrap();
+        assert_eq!(view.n, 5);
+        assert_eq!(view.cells.len(), 5);
+        assert_eq!(view.cells.iter().flat_map(|r| r.iter()).count(), 25);
+        assert!(view.cages.is_empty(), "startup puzzle should have no cages");
         let session = state.lock().unwrap();
-        assert_eq!(session.current().n(), 4);
+        assert_eq!(session.current().n(), 5);
+        assert_eq!(session.current().cages().count(), 0);
     }
 
     #[test]
@@ -861,29 +826,5 @@ mod tests {
         assert!(flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).is_err());
     }
 
-    #[test]
-    fn random_merge_split_cages_command_happy_path() {
-        let app = empty_session_app(4);
-        insert_cage(
-            vec![(0, 0), (0, 1)],
-            OpKind::Add,
-            3,
-            app.state::<Mutex<Session>>(),
-        )
-        .unwrap();
-        insert_cage(
-            vec![(1, 0), (1, 1)],
-            OpKind::Add,
-            5,
-            app.state::<Mutex<Session>>(),
-        )
-        .unwrap();
-
-        let result =
-            random_merge_split_cages((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
-        assert_eq!(result.drafts.len(), 2);
-        assert_eq!(result.view.cages.len(), 0);
-        let total: usize = result.drafts.iter().map(|d| d.cells.len()).sum();
-        assert_eq!(total, 4);
-    }
 }
+
