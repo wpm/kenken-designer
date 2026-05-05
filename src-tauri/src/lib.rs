@@ -73,22 +73,9 @@ fn commit_view(session: &mut Session, next: Puzzle) -> PuzzleView {
     PuzzleView::from(session.current())
 }
 
-fn commit_edit(session: &mut Session, next: Puzzle, draft: Option<DraftCage>) -> EditResult {
+fn commit_edit(session: &mut Session, next: Puzzle, drafts: Vec<DraftCage>) -> EditResult {
     let view = commit_view(session, next);
-    EditResult {
-        view,
-        draft,
-        drafts: vec![],
-    }
-}
-
-fn commit_edit_multi(session: &mut Session, next: Puzzle, drafts: Vec<DraftCage>) -> EditResult {
-    let view = commit_view(session, next);
-    EditResult {
-        view,
-        draft: None,
-        drafts,
-    }
+    EditResult { view, drafts }
 }
 
 fn do_command<T>(
@@ -131,7 +118,7 @@ fn extend_cage(
 ) -> Result<EditResult, String> {
     do_command(&state, |session| {
         let (next, draft) = cage_edit::do_extend_cage(session.current(), anchor, cell)?;
-        Ok(commit_edit(session, next, draft))
+        Ok(commit_edit(session, next, draft.into_iter().collect()))
     })
 }
 
@@ -140,7 +127,7 @@ fn extend_cage(
 fn shrink_cage(cell: (usize, usize), state: State<Mutex<Session>>) -> Result<EditResult, String> {
     do_command(&state, |session| {
         let (next, draft) = cage_edit::do_shrink_cage(session.current(), cell)?;
-        Ok(commit_edit(session, next, draft))
+        Ok(commit_edit(session, next, draft.into_iter().collect()))
     })
 }
 
@@ -167,7 +154,7 @@ fn merge_cages(
 ) -> Result<EditResult, String> {
     do_command(&state, |session| {
         let (next, draft) = cage_edit::do_merge_cages(session.current(), a_anchor, b_anchor)?;
-        Ok(commit_edit(session, next, draft))
+        Ok(commit_edit(session, next, draft.into_iter().collect()))
     })
 }
 
@@ -179,9 +166,8 @@ fn flip_cell(
     state: State<Mutex<Session>>,
 ) -> Result<EditResult, String> {
     do_command(&state, |session| {
-        let (next, drafts) =
-            cage_edit::do_flip_cell(session.current(), cell, target_anchor)?;
-        Ok(commit_edit_multi(session, next, drafts))
+        let (next, drafts) = cage_edit::do_flip_cell(session.current(), cell, target_anchor)?;
+        Ok(commit_edit(session, next, drafts))
     })
 }
 
@@ -198,9 +184,9 @@ fn random_merge_split_cages(
             &puzzle,
             a_anchor,
             b_anchor,
-            &mut session.rng,
+            session.rng_mut(),
         )?;
-        Ok(commit_edit_multi(session, next, drafts))
+        Ok(commit_edit(session, next, drafts))
     })
 }
 
@@ -751,7 +737,7 @@ mod tests {
         .unwrap();
 
         let result = extend_cage((0, 0), (0, 2), app.state::<Mutex<Session>>()).unwrap();
-        assert!(result.draft.is_none());
+        assert!(result.drafts.is_empty());
         assert_eq!(result.view.cages.len(), 1);
         assert_eq!(result.view.cages[0].cells.len(), 3);
     }
@@ -769,8 +755,8 @@ mod tests {
 
         let result = extend_cage((0, 0), (0, 2), app.state::<Mutex<Session>>()).unwrap();
         assert!(result.view.cages.is_empty());
-        let draft = result.draft.unwrap();
-        assert_eq!(draft.cells.len(), 3);
+        assert_eq!(result.drafts.len(), 1);
+        assert_eq!(result.drafts[0].cells.len(), 3);
     }
 
     #[test]
@@ -786,7 +772,7 @@ mod tests {
 
         let result = shrink_cage((0, 0), app.state::<Mutex<Session>>()).unwrap();
         assert!(result.view.cages.is_empty());
-        assert!(result.draft.is_none());
+        assert!(result.drafts.is_empty());
     }
 
     #[test]
@@ -838,7 +824,7 @@ mod tests {
         .unwrap();
 
         let result = merge_cages((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
-        assert!(result.draft.is_none());
+        assert!(result.drafts.is_empty());
         assert_eq!(result.view.cages.len(), 1);
         assert_eq!(result.view.cages[0].cells.len(), 4);
     }
@@ -900,7 +886,6 @@ mod tests {
         let result =
             random_merge_split_cages((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
         assert_eq!(result.drafts.len(), 2);
-        assert!(result.draft.is_none());
         assert_eq!(result.view.cages.len(), 0);
         let total: usize = result.drafts.iter().map(|d| d.cells.len()).sum();
         assert_eq!(total, 4);

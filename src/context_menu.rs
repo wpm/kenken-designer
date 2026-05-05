@@ -19,8 +19,7 @@ pub struct ContextMenuItems {
     pub make_singleton: bool,
     pub uncage: bool,
     pub delete_cage: bool,
-    pub flip_targets: Vec<FlipTarget>,
-    pub merge_split_targets: Vec<FlipTarget>,
+    pub adjacent_targets: Vec<FlipTarget>,
 }
 
 #[must_use]
@@ -44,8 +43,8 @@ pub fn menu_items_for(ctx: &MenuContext) -> ContextMenuItems {
         .any(|d| d.cells.len() == 1 && d.cells.contains(&(r, c)));
     let make_singleton = !is_committed_singleton && !is_singleton_draft;
 
-    let (flip_targets, merge_split_targets) = if let Some(src_idx) = committed_idx {
-        let targets: Vec<FlipTarget> = adjacent_committed_cages(&ctx.view, (r, c), src_idx)
+    let adjacent_targets = if let Some(src_idx) = committed_idx {
+        adjacent_committed_cages(&ctx.view, (r, c), src_idx)
             .into_iter()
             .map(|idx| {
                 let anchor = cage_anchor(&ctx.view.cages[idx]);
@@ -54,10 +53,9 @@ pub fn menu_items_for(ctx: &MenuContext) -> ContextMenuItems {
                     label: cage_label(&ctx.view, idx),
                 }
             })
-            .collect();
-        (targets.clone(), targets)
+            .collect()
     } else {
-        (vec![], vec![])
+        vec![]
     };
 
     ContextMenuItems {
@@ -65,8 +63,7 @@ pub fn menu_items_for(ctx: &MenuContext) -> ContextMenuItems {
         make_singleton,
         uncage,
         delete_cage,
-        flip_targets,
-        merge_split_targets,
+        adjacent_targets,
     }
 }
 
@@ -77,18 +74,16 @@ fn adjacent_committed_cages(
 ) -> Vec<usize> {
     let (r, c) = cell;
     let n = view.n;
-    let mut seen = std::collections::HashSet::new();
-    let mut result = Vec::new();
+    let mut result: Vec<usize> = Vec::new();
 
-    let neighbors: &[(i64, i64)] = &[(-1, 0), (1, 0), (0, -1), (0, 1)];
-    for &(dr, dc) in neighbors {
+    for (dr, dc) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
         let nr = r as i64 + dr;
         let nc = c as i64 + dc;
         if nr < 0 || nc < 0 || nr >= n as i64 || nc >= n as i64 {
             continue;
         }
         if let Some(idx) = cage_at(view, nr as usize, nc as usize) {
-            if idx != src_idx && seen.insert(idx) {
+            if idx != src_idx && !result.contains(&idx) {
                 result.push(idx);
             }
         }
@@ -139,8 +134,7 @@ mod tests {
         assert!(items.make_singleton);
         assert!(!items.uncage);
         assert!(!items.delete_cage);
-        assert!(items.flip_targets.is_empty());
-        assert!(items.merge_split_targets.is_empty());
+        assert!(items.adjacent_targets.is_empty());
     }
 
     #[test]
@@ -156,7 +150,7 @@ mod tests {
         assert!(items.make_singleton);
         assert!(!items.uncage);
         assert!(!items.delete_cage);
-        assert!(items.flip_targets.is_empty());
+        assert!(items.adjacent_targets.is_empty());
     }
 
     #[test]
@@ -172,8 +166,7 @@ mod tests {
         assert!(!items.make_singleton);
         assert!(items.uncage);
         assert!(items.delete_cage);
-        assert!(items.flip_targets.is_empty());
-        assert!(items.merge_split_targets.is_empty());
+        assert!(items.adjacent_targets.is_empty());
     }
 
     #[test]
@@ -192,7 +185,6 @@ mod tests {
         assert!(items.make_singleton);
         assert!(items.uncage);
         assert!(items.delete_cage);
-        assert!(!items.flip_targets.is_empty());
-        assert!(!items.merge_split_targets.is_empty());
+        assert!(!items.adjacent_targets.is_empty());
     }
 }

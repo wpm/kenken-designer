@@ -1,19 +1,22 @@
 use crate::app::{
-    apply_edit, call_edit, dispatch_edit_multi, ContextMenuState, DraftCage, FlipCellArgs,
-    PuzzleView, RandomMergeSplitCagesArgs,
+    apply_edit, call_edit, dispatch_edit, sync_active_cage, ContextMenuState, DraftCage,
+    FlipCellArgs, PuzzleView, RandomMergeSplitCagesArgs,
 };
 use crate::cage_edit::{delete_at, escape_at, splinter_at};
 use crate::cage_index::cage_anchor;
 use crate::operator_entry::{ActiveCage, OperatorEntry};
-use crate::theme::{BG, LINE, SANS_FONT};
+use crate::theme::{BG, INK, INK3, LINE, SANS_FONT};
 use leptos::prelude::*;
 use leptos::web_sys;
 use wasm_bindgen::JsCast;
 
-const ITEM_STYLE: &str =
-    "padding:5px 14px;cursor:pointer;white-space:nowrap;color:#26221b;user-select:none;";
-const LABEL_STYLE: &str =
-    "padding:3px 14px 1px;font-size:11px;color:#8b8476;pointer-events:none;";
+fn item_style() -> String {
+    format!("padding:5px 14px;cursor:pointer;white-space:nowrap;color:{INK};user-select:none;")
+}
+
+fn label_style() -> String {
+    format!("padding:3px 14px 1px;font-size:11px;color:{INK3};pointer-events:none;")
+}
 
 fn item_enter(ev: leptos::ev::MouseEvent) {
     let t = ev
@@ -70,7 +73,7 @@ pub fn ContextMenu(
         <div style=menu_style>
             {items.set_operation.then(|| view! {
                 <div
-                    style=ITEM_STYLE
+                    style=item_style()
                     on:mouseenter=item_enter
                     on:mouseleave=item_leave
                     on:mousedown=move |ev: leptos::ev::MouseEvent| {
@@ -106,7 +109,7 @@ pub fn ContextMenu(
             })}
             {items.make_singleton.then(|| view! {
                 <div
-                    style=ITEM_STYLE
+                    style=item_style()
                     on:mouseenter=item_enter
                     on:mouseleave=item_leave
                     on:mousedown=move |ev: leptos::ev::MouseEvent| {
@@ -118,7 +121,7 @@ pub fn ContextMenu(
                         });
                         if let Some(action) = action {
                             apply_edit(set_puzzle, drafts, active_cage, action);
-                            sync_cage(puzzle, cursor, active_cage);
+                            sync_active_cage(puzzle, cursor, active_cage);
                         }
                         close();
                     }
@@ -128,7 +131,7 @@ pub fn ContextMenu(
             })}
             {items.uncage.then(|| view! {
                 <div
-                    style=ITEM_STYLE
+                    style=item_style()
                     on:mouseenter=item_enter
                     on:mouseleave=item_leave
                     on:mousedown=move |ev: leptos::ev::MouseEvent| {
@@ -140,7 +143,7 @@ pub fn ContextMenu(
                         });
                         if let Some(action) = action {
                             apply_edit(set_puzzle, drafts, active_cage, action);
-                            sync_cage(puzzle, cursor, active_cage);
+                            sync_active_cage(puzzle, cursor, active_cage);
                         }
                         close();
                     }
@@ -150,7 +153,7 @@ pub fn ContextMenu(
             })}
             {items.delete_cage.then(|| view! {
                 <div
-                    style=ITEM_STYLE
+                    style=item_style()
                     on:mouseenter=item_enter
                     on:mouseleave=item_leave
                     on:mousedown=move |ev: leptos::ev::MouseEvent| {
@@ -162,7 +165,7 @@ pub fn ContextMenu(
                         });
                         if let Some(action) = action {
                             apply_edit(set_puzzle, drafts, active_cage, action);
-                            sync_cage(puzzle, cursor, active_cage);
+                            sync_active_cage(puzzle, cursor, active_cage);
                         }
                         close();
                     }
@@ -170,30 +173,31 @@ pub fn ContextMenu(
                     "Delete cage"
                 </div>
             })}
-            {(!items.flip_targets.is_empty()).then({
+            {(!items.adjacent_targets.is_empty()).then({
                 let sep = sep_style.clone();
-                let targets = items.flip_targets.clone();
+                let targets = items.adjacent_targets.clone();
                 move || view! {
                     <div style=sep />
-                    <div style=LABEL_STYLE>"Flip to cage\u{2026}"</div>
-                    {targets.into_iter().map(|ft| {
+                    <div style=label_style()>"Flip to cage\u{2026}"</div>
+                    {targets.iter().map(|ft| {
                         let anchor = ft.anchor;
                         let label = ft.label.clone();
                         let close2 = close;
                         view! {
                             <div
-                                style=ITEM_STYLE
+                                style=item_style()
                                 on:mouseenter=item_enter
                                 on:mouseleave=item_leave
                                 on:mousedown=move |ev: leptos::ev::MouseEvent| {
                                     ev.prevent_default();
-                                    dispatch_edit_multi(
+                                    dispatch_edit(
                                         set_puzzle,
                                         drafts,
                                         Box::pin(call_edit("flip_cell", FlipCellArgs {
                                             cell: (r, c),
                                             target_anchor: anchor,
                                         })),
+                                        None,
                                     );
                                     close2();
                                 }
@@ -204,12 +208,11 @@ pub fn ContextMenu(
                     }).collect::<Vec<_>>()}
                 }
             })}
-            {(!items.merge_split_targets.is_empty()).then({
-                let sep = sep_style.clone();
-                let targets = items.merge_split_targets.clone();
+            {(!items.adjacent_targets.is_empty()).then({
+                let targets = items.adjacent_targets;
                 move || view! {
-                    <div style=sep />
-                    <div style=LABEL_STYLE>"Random merge-split with\u{2026}"</div>
+                    <div style=sep_style />
+                    <div style=label_style()>"Random merge-split with\u{2026}"</div>
                     {targets.into_iter().map(|ft| {
                         let b_anchor = ft.anchor;
                         let label = ft.label.clone();
@@ -217,12 +220,12 @@ pub fn ContextMenu(
                         let close2 = close;
                         view! {
                             <div
-                                style=ITEM_STYLE
+                                style=item_style()
                                 on:mouseenter=item_enter
                                 on:mouseleave=item_leave
                                 on:mousedown=move |ev: leptos::ev::MouseEvent| {
                                     ev.prevent_default();
-                                    dispatch_edit_multi(
+                                    dispatch_edit(
                                         set_puzzle,
                                         drafts,
                                         Box::pin(call_edit(
@@ -232,6 +235,7 @@ pub fn ContextMenu(
                                                 b_anchor,
                                             },
                                         )),
+                                        None,
                                     );
                                     close2();
                                 }
@@ -246,15 +250,3 @@ pub fn ContextMenu(
     }
 }
 
-fn sync_cage(
-    puzzle: ReadSignal<Option<PuzzleView>>,
-    cursor: RwSignal<(usize, usize)>,
-    active_cage: RwSignal<Option<usize>>,
-) {
-    let (r, c) = cursor.get_untracked();
-    let next =
-        puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| crate::cage_index::cage_at(v, r, c)));
-    if active_cage.get_untracked() != next {
-        active_cage.set(next);
-    }
-}

@@ -19,7 +19,7 @@ const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    pub async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"])]
     fn listen(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> JsValue;
@@ -31,43 +31,43 @@ struct NewPuzzleArgs {
 }
 
 #[derive(Serialize)]
-pub struct NoArgs {}
+struct NoArgs {}
 
 #[derive(Serialize)]
-pub struct AnchorArgs {
-    pub anchor: (usize, usize),
+struct AnchorArgs {
+    anchor: (usize, usize),
 }
 
 #[derive(Serialize)]
-pub struct CellArgs {
-    pub cell: (usize, usize),
+struct CellArgs {
+    cell: (usize, usize),
 }
 
 #[derive(Serialize)]
-pub struct ExtendCageArgs {
-    pub anchor: (usize, usize),
-    pub cell: (usize, usize),
+struct ExtendCageArgs {
+    anchor: (usize, usize),
+    cell: (usize, usize),
 }
 
 #[derive(Serialize)]
-pub struct InsertCageArgs {
-    pub cells: Vec<(usize, usize)>,
-    pub op: OpKind,
-    pub target: u32,
+struct InsertCageArgs {
+    cells: Vec<(usize, usize)>,
+    op: OpKind,
+    target: u32,
 }
 
 #[derive(Serialize)]
-pub struct SetCageOperationArgs {
-    pub anchor: (usize, usize),
-    pub op: OpKind,
-    pub target: u32,
+struct SetCageOperationArgs {
+    anchor: (usize, usize),
+    op: OpKind,
+    target: u32,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MergeCagesArgs {
-    pub a_anchor: (usize, usize),
-    pub b_anchor: (usize, usize),
+struct MergeCagesArgs {
+    a_anchor: (usize, usize),
+    b_anchor: (usize, usize),
 }
 
 #[derive(Serialize)]
@@ -115,7 +115,6 @@ pub struct DraftCage {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EditResult {
     pub view: PuzzleView,
-    pub draft: Option<DraftCage>,
     pub drafts: Vec<DraftCage>,
 }
 
@@ -258,15 +257,15 @@ pub fn App() -> impl IntoView {
         if active_cage.get_untracked() != next_active {
             active_cage.set(next_active);
         }
-        let draft_pos = drafts.with_untracked(|ds| {
-            ds.iter().position(|d| d.cells.contains(&(r, c)))
+        let swapped = drafts.with_untracked(|ds| {
+            let i = ds.iter().position(|d| d.cells.contains(&(r, c)))?;
+            if i == 0 { return None; }
+            let mut v = ds.clone();
+            v.swap(0, i);
+            Some(v)
         });
-        if let Some(i) = draft_pos {
-            if i != 0 {
-                let mut sorted = drafts.with_untracked(|ds| ds.clone());
-                sorted.swap(0, i);
-                drafts.set(sorted);
-            }
+        if let Some(v) = swapped {
+            drafts.set(v);
         }
     });
 
@@ -647,7 +646,7 @@ pub fn set_drafts_if_changed(drafts: RwSignal<Vec<DraftCage>>, next: Vec<DraftCa
     }
 }
 
-fn dispatch_edit(
+pub fn dispatch_edit(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
     drafts: RwSignal<Vec<DraftCage>>,
     fut: Pin<Box<dyn Future<Output = Option<EditResult>>>>,
@@ -656,27 +655,13 @@ fn dispatch_edit(
     spawn_local(async move {
         if let Some(result) = fut.await {
             set_puzzle.set(Some(result.view));
-            let next_drafts = if let Some(d) = override_draft {
-                vec![d]
-            } else if !result.drafts.is_empty() {
-                result.drafts
-            } else {
-                result.draft.into_iter().collect()
-            };
+            let next_drafts = override_draft.map_or(result.drafts, |d| vec![d]);
             set_drafts_if_changed(drafts, next_drafts);
         }
     });
 }
 
-pub fn dispatch_edit_multi(
-    set_puzzle: WriteSignal<Option<PuzzleView>>,
-    drafts: RwSignal<Vec<DraftCage>>,
-    fut: Pin<Box<dyn Future<Output = Option<EditResult>>>>,
-) {
-    dispatch_edit(set_puzzle, drafts, fut, None);
-}
-
-fn sync_active_cage(
+pub fn sync_active_cage(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,

@@ -5,7 +5,7 @@ pub struct Session {
     current: Puzzle,
     undo: Vec<Puzzle>,
     redo: Vec<Puzzle>,
-    pub rng: SmallRng,
+    rng: SmallRng,
 }
 
 impl Session {
@@ -20,6 +20,10 @@ impl Session {
 
     pub const fn current(&self) -> &Puzzle {
         &self.current
+    }
+
+    pub fn rng_mut(&mut self) -> &mut SmallRng {
+        &mut self.rng
     }
 
     pub fn commit(&mut self, next: Puzzle) {
