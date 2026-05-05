@@ -148,28 +148,15 @@ mod tests {
     }
 
     #[test]
-    fn reentrant_diff_uses_new_generation() {
-        // Simulate the generation counter pattern: incrementing the counter
-        // makes stale callbacks bail out.
-        use std::sync::atomic::{AtomicU64, Ordering};
-        use std::sync::Arc;
-
-        let gen = Arc::new(AtomicU64::new(0));
-
-        let current_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
-        assert_eq!(current_gen, 1);
-
-        // A new diff arrives and increments the generation again.
-        let new_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
-        assert_eq!(new_gen, 2);
-
-        // The stale callback checks: if its captured generation != current, bail.
-        let stale_callback_gen = current_gen;
-        let is_stale = stale_callback_gen != gen.load(Ordering::SeqCst);
-        assert!(
-            is_stale,
-            "callback with old generation should be considered stale"
-        );
+    fn zero_n_returns_empty() {
+        let diff = PuzzleDiff {
+            changes: vec![CellDiff {
+                cell: (0, 0),
+                removed: vec![1],
+                added: vec![],
+            }],
+        };
+        assert!(flash_entries(&diff, 100.0, 14.0, 0).is_empty());
     }
 
     #[test]
