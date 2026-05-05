@@ -1,5 +1,5 @@
 use crate::cage_edit::build_operation;
-use crate::view::{split_operation, CageView, OpKind};
+use crate::view::{split_operation, CageView};
 use kenken::{Cage, Cell, Polyomino, Puzzle};
 
 /// Serializable puzzle representation (version 1).
@@ -110,10 +110,7 @@ mod tests {
             Operation::Add(5),
         );
         let cage_b = Cage::new(5, Polyomino::new(&[Cell::new(1, 0)]), Operation::Given(3));
-        p.insert_cage(cage_a)
-            .unwrap()
-            .insert_cage(cage_b)
-            .unwrap()
+        p.insert_cage(cage_a).unwrap().insert_cage(cage_b).unwrap()
     }
 
     #[test]
@@ -130,6 +127,45 @@ mod tests {
 
         assert_eq!(puzzle.n(), loaded.n());
         assert_eq!(puzzle.cages().count(), loaded.cages().count());
+
+        // Verify cage contents survive the round-trip: look up the two-cell
+        // Add cage (anchor at (0,0)) in the loaded puzzle and confirm its
+        // operation and cells match the original.
+        let original_add_cage = puzzle
+            .cages()
+            .find(|c| {
+                c.cells()
+                    .iter()
+                    .any(|cell| cell.row == 0 && cell.column == 0)
+            })
+            .unwrap();
+        let loaded_add_cage = loaded
+            .cages()
+            .find(|c| {
+                c.cells()
+                    .iter()
+                    .any(|cell| cell.row == 0 && cell.column == 0)
+            })
+            .unwrap();
+        assert_eq!(
+            original_add_cage.operation(),
+            loaded_add_cage.operation(),
+            "Add cage operation should survive round-trip"
+        );
+        let original_cells: std::collections::BTreeSet<(usize, usize)> = original_add_cage
+            .cells()
+            .iter()
+            .map(|c| (c.row, c.column))
+            .collect();
+        let loaded_cells: std::collections::BTreeSet<(usize, usize)> = loaded_add_cage
+            .cells()
+            .iter()
+            .map(|c| (c.row, c.column))
+            .collect();
+        assert_eq!(
+            original_cells, loaded_cells,
+            "Add cage cells should survive round-trip"
+        );
     }
 
     #[test]

@@ -199,7 +199,11 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
         };
     }
     if modifier && key.eq_ignore_ascii_case("s") {
-        return if shift { KeyAction::SaveAs } else { KeyAction::Save };
+        return if shift {
+            KeyAction::SaveAs
+        } else {
+            KeyAction::Save
+        };
     }
     if modifier && key.eq_ignore_ascii_case("o") {
         return KeyAction::Open;
@@ -380,6 +384,7 @@ pub fn App() -> impl IntoView {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // All args are lightweight signal handles
 fn install_keydown_handler(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
@@ -478,8 +483,10 @@ fn handle_save(current_path: RwSignal<Option<String>>, force_prompt: bool) {
         let Some(path) = path else { return };
         let args = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok();
         if let Some(args) = args {
-            let _ = invoke("save_puzzle", args).await;
-            current_path.set(Some(path));
+            let result = invoke("save_puzzle", args).await;
+            if serde_wasm_bindgen::from_value::<()>(result).is_ok() {
+                current_path.set(Some(path));
+            }
         }
     });
 }
@@ -493,8 +500,7 @@ fn handle_open(
     spawn_local(async move {
         let path = prompt_open_path().await;
         let Some(path) = path else { return };
-        let args =
-            serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok();
+        let args = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok();
         if let Some(args) = args {
             let value = invoke("load_puzzle", args).await;
             if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(value) {
