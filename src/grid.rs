@@ -433,8 +433,11 @@ const fn op_glyph(op: OpKind) -> &'static str {
 
 fn op_label(op: OpKind, target: u32) -> String {
     match op {
+        OpKind::Add => format!("+{target}"),
+        OpKind::Sub => format!("{target}\u{2212}"),
+        OpKind::Mul => format!("{target}\u{00d7}"),
+        OpKind::Div => format!("{target}\u{00f7}"),
         OpKind::Given => format!("{target}"),
-        _ => format!("{}{target}", op_glyph(op)),
     }
 }
 
