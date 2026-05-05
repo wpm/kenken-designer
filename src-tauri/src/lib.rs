@@ -180,12 +180,8 @@ fn random_merge_split_cages(
 ) -> Result<EditResult, String> {
     do_command(&state, |session| {
         let puzzle = session.current().clone();
-        let (next, drafts) = cage_edit::do_random_merge_split_cages(
-            &puzzle,
-            a_anchor,
-            b_anchor,
-            session.rng_mut(),
-        )?;
+        let (next, drafts) =
+            cage_edit::do_random_merge_split_cages(&puzzle, a_anchor, b_anchor, session.rng_mut())?;
         Ok(commit_edit(session, next, drafts))
     })
 }

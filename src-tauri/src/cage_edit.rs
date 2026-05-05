@@ -1,4 +1,4 @@
-use kenken::{Cage, Cell, Operation, Polyomino, Puzzle, random_merge_split};
+use kenken::{random_merge_split, Cage, Cell, Operation, Polyomino, Puzzle};
 
 use crate::view::{DraftCage, OpKind};
 

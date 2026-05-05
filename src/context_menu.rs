@@ -67,11 +67,7 @@ pub fn menu_items_for(ctx: &MenuContext) -> ContextMenuItems {
     }
 }
 
-fn adjacent_committed_cages(
-    view: &PuzzleView,
-    cell: (usize, usize),
-    src_idx: usize,
-) -> Vec<usize> {
+fn adjacent_committed_cages(view: &PuzzleView, cell: (usize, usize), src_idx: usize) -> Vec<usize> {
     let (r, c) = cell;
     let n = view.n;
     let mut result: Vec<usize> = Vec::new();
@@ -171,10 +167,7 @@ mod tests {
 
     #[test]
     fn multi_cell_cage_adjacent_to_another_shows_full_menu() {
-        let v = view(
-            3,
-            vec![cage(&[(0, 0), (0, 1)]), cage(&[(1, 0), (1, 1)])],
-        );
+        let v = view(3, vec![cage(&[(0, 0), (0, 1)]), cage(&[(1, 0), (1, 1)])]);
         let ctx = MenuContext {
             cell: (0, 0),
             view: v,

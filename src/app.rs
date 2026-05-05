@@ -1,6 +1,6 @@
 use crate::cage_edit::{delete_at, escape_at, shift_arrow, splinter_at, CageEdit};
 use crate::cage_index::{cage_anchor, cage_at, cells_anchor};
-use crate::context_menu::{menu_items_for, MenuContext, ContextMenuItems};
+use crate::context_menu::{menu_items_for, ContextMenuItems, MenuContext};
 use crate::grid::Grid;
 use crate::navigation::{move_cursor, next_state, NavKey};
 use crate::operator_entry::{step as operator_step, ActiveCage, OperatorEntry, Step};
@@ -259,7 +259,9 @@ pub fn App() -> impl IntoView {
         }
         let swapped = drafts.with_untracked(|ds| {
             let i = ds.iter().position(|d| d.cells.contains(&(r, c)))?;
-            if i == 0 { return None; }
+            if i == 0 {
+                return None;
+            }
             let mut v = ds.clone();
             v.swap(0, i);
             Some(v)
@@ -278,15 +280,32 @@ pub fn App() -> impl IntoView {
         let items = puzzle.with_untracked(|opt| {
             opt.as_ref().map(|v| {
                 let ds = drafts.with_untracked(|ds| ds.clone());
-                menu_items_for(&MenuContext { cell: (r, c), view: v.clone(), drafts: ds })
+                menu_items_for(&MenuContext {
+                    cell: (r, c),
+                    view: v.clone(),
+                    drafts: ds,
+                })
             })
         });
         if let Some(items) = items {
-            context_menu.set(Some(ContextMenuState { x, y, cell: (r, c), items }));
+            context_menu.set(Some(ContextMenuState {
+                x,
+                y,
+                cell: (r, c),
+                items,
+            }));
         }
     });
 
-    install_keydown_handler(puzzle, set_puzzle, cursor, active_cage, drafts, entry, context_menu);
+    install_keydown_handler(
+        puzzle,
+        set_puzzle,
+        cursor,
+        active_cage,
+        drafts,
+        entry,
+        context_menu,
+    );
 
     view! {
         <main class="app-main">
@@ -430,9 +449,8 @@ fn handle_entry_key(
         Step::Cancel => entry.set(None),
         Step::Commit { op, target } => match cage {
             ActiveCage::Draft => {
-                let cells = drafts.with_untracked(|ds| {
-                    ds.first().map(|d| d.cells.clone()).unwrap_or_default()
-                });
+                let cells = drafts
+                    .with_untracked(|ds| ds.first().map(|d| d.cells.clone()).unwrap_or_default());
                 let remaining_drafts = drafts.with_untracked(|ds| ds[1..].to_vec());
                 refresh_from_then(
                     set_puzzle,

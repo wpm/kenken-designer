@@ -129,10 +129,7 @@ fn remove_from_draft(draft: Option<&DraftCage>, cell: (usize, usize)) -> Option<
 /// Augmented cage list for rendering: committed cages plus any drafts appended at the end.
 /// The returned `first_draft_idx` points to the first draft's position when present.
 #[must_use]
-pub fn effective_cages(
-    view: &PuzzleView,
-    drafts: &[DraftCage],
-) -> (Vec<CageView>, Option<usize>) {
+pub fn effective_cages(view: &PuzzleView, drafts: &[DraftCage]) -> (Vec<CageView>, Option<usize>) {
     let mut cages = view.cages.clone();
     let first_draft_idx = if drafts.is_empty() {
         None

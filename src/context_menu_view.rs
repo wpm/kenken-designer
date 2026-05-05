@@ -56,9 +56,8 @@ pub fn ContextMenu(
     let close = move || on_close.run(());
 
     let a_anchor = puzzle.with_untracked(|opt| {
-        opt.as_ref().and_then(|v| {
-            crate::cage_index::cage_at(v, r, c).map(|idx| cage_anchor(&v.cages[idx]))
-        })
+        opt.as_ref()
+            .and_then(|v| crate::cage_index::cage_at(v, r, c).map(|idx| cage_anchor(&v.cages[idx])))
     });
 
     let menu_style = format!(
@@ -249,4 +248,3 @@ pub fn ContextMenu(
         </div>
     }
 }
-
