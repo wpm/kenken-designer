@@ -15,6 +15,7 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
+const FILE_ACTION_EVENT: &str = "file-action";
 
 #[wasm_bindgen]
 extern "C" {
@@ -23,6 +24,21 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"])]
     fn listen(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> JsValue;
+
+    /// Open a file-save dialog from the Tauri dialog plugin.
+    /// Returns a JS Promise resolving to the path string or null if cancelled.
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "dialog"])]
+    async fn save(options: JsValue) -> JsValue;
+
+    /// Open a file-open dialog from the Tauri dialog plugin.
+    /// Returns a JS Promise resolving to the path string or null if cancelled.
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "dialog"])]
+    async fn open(options: JsValue) -> JsValue;
+}
+
+#[derive(Serialize)]
+struct PathArgs {
+    path: String,
 }
 
 #[derive(Serialize)]
@@ -160,6 +176,9 @@ const fn is_text_input_tag(tag: &str) -> bool {
 enum KeyAction {
     Undo,
     Redo,
+    Save,
+    SaveAs,
+    Open,
     Navigate(NavKey),
     ShiftArrow(NavKey),
     Escape,
@@ -178,6 +197,12 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
         } else {
             KeyAction::Undo
         };
+    }
+    if modifier && key.eq_ignore_ascii_case("s") {
+        return if shift { KeyAction::SaveAs } else { KeyAction::Save };
+    }
+    if modifier && key.eq_ignore_ascii_case("o") {
+        return KeyAction::Open;
     }
     if modifier {
         return KeyAction::Ignore;
@@ -218,9 +243,11 @@ pub fn App() -> impl IntoView {
     let drafts = RwSignal::new(Vec::<DraftCage>::new());
     let entry = RwSignal::new(None::<OperatorEntry>);
     let context_menu = RwSignal::new(None::<ContextMenuState>);
+    let current_path = RwSignal::new(None::<String>);
 
     refresh_from(set_puzzle, Box::pin(call("get_state", NoArgs {})));
     listen_for_puzzle_updates(set_puzzle);
+    listen_for_file_actions(set_puzzle, current_path);
 
     let on_size_change = move |ev: Event| {
         let Ok(n) = event_target_value(&ev).parse::<usize>() else {
@@ -299,6 +326,7 @@ pub fn App() -> impl IntoView {
         drafts,
         entry,
         context_menu,
+        current_path,
     );
 
     view! {
@@ -360,6 +388,7 @@ fn install_keydown_handler(
     drafts: RwSignal<Vec<DraftCage>>,
     entry: RwSignal<Option<OperatorEntry>>,
     context_menu: RwSignal<Option<ContextMenuState>>,
+    current_path: RwSignal<Option<String>>,
 ) {
     window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
         if let Some(current_entry) = entry.get_untracked() {
@@ -397,6 +426,18 @@ fn install_keydown_handler(
                     set_drafts_if_changed(drafts, vec![]);
                 });
             }
+            KeyAction::Save => {
+                ev.prevent_default();
+                handle_save(current_path, false);
+            }
+            KeyAction::SaveAs => {
+                ev.prevent_default();
+                handle_save(current_path, true);
+            }
+            KeyAction::Open => {
+                ev.prevent_default();
+                handle_open(set_puzzle, current_path);
+            }
             KeyAction::Navigate(nav_key) => {
                 ev.prevent_default();
                 handle_navigate(puzzle, cursor, active_cage, nav_key);
@@ -419,6 +460,113 @@ fn install_keydown_handler(
             }
         }
     });
+}
+
+/// Ask the user to pick a save path if needed, then call `save_puzzle`.
+/// `force_prompt` = true means always show the dialog (Save As).
+#[allow(clippy::future_not_send)]
+fn handle_save(current_path: RwSignal<Option<String>>, force_prompt: bool) {
+    spawn_local(async move {
+        let path = if force_prompt {
+            prompt_save_path().await
+        } else {
+            match current_path.get_untracked() {
+                Some(p) => Some(p),
+                None => prompt_save_path().await,
+            }
+        };
+        let Some(path) = path else { return };
+        let args = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok();
+        if let Some(args) = args {
+            let _ = invoke("save_puzzle", args).await;
+            current_path.set(Some(path));
+        }
+    });
+}
+
+/// Ask the user to pick an existing file, then call `load_puzzle` and update the view.
+#[allow(clippy::future_not_send)]
+fn handle_open(
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    current_path: RwSignal<Option<String>>,
+) {
+    spawn_local(async move {
+        let path = prompt_open_path().await;
+        let Some(path) = path else { return };
+        let args =
+            serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok();
+        if let Some(args) = args {
+            let value = invoke("load_puzzle", args).await;
+            if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(value) {
+                set_puzzle.set(Some(view));
+                current_path.set(Some(path));
+            }
+        }
+    });
+}
+
+#[derive(Serialize)]
+struct DialogFilter {
+    name: &'static str,
+    extensions: Vec<&'static str>,
+}
+
+fn kenken_filter() -> DialogFilter {
+    DialogFilter {
+        name: "KenKen",
+        extensions: vec!["kenken"],
+    }
+}
+
+#[allow(clippy::future_not_send)]
+async fn prompt_save_path() -> Option<String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SaveOptions {
+        default_path: &'static str,
+        filters: Vec<DialogFilter>,
+    }
+    let opts = SaveOptions {
+        default_path: "puzzle.kenken",
+        filters: vec![kenken_filter()],
+    };
+    let opts_js = serde_wasm_bindgen::to_value(&opts).ok()?;
+    save(opts_js).await.as_string()
+}
+
+#[allow(clippy::future_not_send)]
+async fn prompt_open_path() -> Option<String> {
+    #[derive(Serialize)]
+    struct OpenOptions {
+        multiple: bool,
+        filters: Vec<DialogFilter>,
+    }
+    let opts = OpenOptions {
+        multiple: false,
+        filters: vec![kenken_filter()],
+    };
+    let opts_js = serde_wasm_bindgen::to_value(&opts).ok()?;
+    open(opts_js).await.as_string()
+}
+
+fn listen_for_file_actions(
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    current_path: RwSignal<Option<String>>,
+) {
+    let cb = Closure::<dyn FnMut(JsValue)>::new(move |event: JsValue| {
+        if let Ok(payload) = js_sys::Reflect::get(&event, &JsValue::from_str("payload")) {
+            if let Some(action) = payload.as_string() {
+                match action.as_str() {
+                    "save" => handle_save(current_path, false),
+                    "save_as" => handle_save(current_path, true),
+                    "open" => handle_open(set_puzzle, current_path),
+                    _ => {}
+                }
+            }
+        }
+    });
+    let _ = listen(FILE_ACTION_EVENT, &cb);
+    cb.forget();
 }
 
 fn handle_entry_key(
@@ -846,5 +994,35 @@ mod tests {
             dispatch_key("Escape", false, true, false),
             KeyAction::Ignore
         );
+    }
+
+    #[test]
+    fn dispatch_key_returns_save_for_modifier_s() {
+        assert_eq!(dispatch_key("s", false, true, false), KeyAction::Save);
+        assert_eq!(dispatch_key("S", false, true, false), KeyAction::Save);
+    }
+
+    #[test]
+    fn dispatch_key_returns_save_as_for_modifier_shift_s() {
+        assert_eq!(dispatch_key("s", true, true, false), KeyAction::SaveAs);
+        assert_eq!(dispatch_key("S", true, true, false), KeyAction::SaveAs);
+    }
+
+    #[test]
+    fn dispatch_key_returns_open_for_modifier_o() {
+        assert_eq!(dispatch_key("o", false, true, false), KeyAction::Open);
+        assert_eq!(dispatch_key("O", false, true, false), KeyAction::Open);
+    }
+
+    #[test]
+    fn dispatch_key_ignores_file_keys_without_modifier() {
+        assert_eq!(dispatch_key("s", false, false, false), KeyAction::Ignore);
+        assert_eq!(dispatch_key("o", false, false, false), KeyAction::Ignore);
+    }
+
+    #[test]
+    fn dispatch_key_ignores_file_keys_when_text_input_focused() {
+        assert_eq!(dispatch_key("s", false, true, true), KeyAction::Ignore);
+        assert_eq!(dispatch_key("o", false, true, true), KeyAction::Ignore);
     }
 }

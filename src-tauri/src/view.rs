@@ -40,7 +40,7 @@ pub struct EditResult {
     pub drafts: Vec<DraftCage>,
 }
 
-fn split_operation(op: Operation) -> (OpKind, u32) {
+pub(crate) fn split_operation(op: Operation) -> (OpKind, u32) {
     match op {
         Operation::Add(n) => (OpKind::Add, u32::from(n)),
         Operation::Subtract(n) => (OpKind::Sub, u32::from(n)),
