@@ -1,5 +1,6 @@
 mod cage_edit;
 pub mod diff;
+mod edit;
 mod session;
 mod view;
 
@@ -15,6 +16,7 @@ use session::Session;
 use view::{DraftCage, EditResult, OpKind, PuzzleView};
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
+const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
 
 fn commit_new_puzzle(state: &Mutex<Session>, n: usize) -> Result<PuzzleView, String> {
     let puzzle = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
@@ -176,6 +178,17 @@ fn merge_cages(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn clear_all_cages(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    do_command(&state, |session| {
+        let next = edit::apply_edit(session.current(), edit::EditKind::Widening, |p| {
+            Ok(cage_edit::do_clear_all_cages(p))
+        })?;
+        Ok(commit_view(session, next))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn flip_cell(
     cell: (usize, usize),
     target_anchor: (usize, usize),
@@ -226,6 +239,7 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // the menu items, so Cmd/Ctrl+Z fires exactly once regardless of platform.
     let undo = MenuItemBuilder::with_id("undo", "Undo").build(app)?;
     let redo = MenuItemBuilder::with_id("redo", "Redo").build(app)?;
+    let clear_all = MenuItemBuilder::with_id("clear_all_cages", "Clear all cages").build(app)?;
     let edit = Submenu::with_items(
         app,
         "Edit",
@@ -233,6 +247,8 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &undo,
             &redo,
+            &PredefinedMenuItem::separator(app)?,
+            &clear_all,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::cut(app, None)?,
             &PredefinedMenuItem::copy(app, None)?,
@@ -359,10 +375,15 @@ fn dispatch_menu_action(state: &Mutex<Session>, id: &str) -> Option<PuzzleView> 
 
 #[allow(clippy::needless_pass_by_value)] // on_menu_event requires by-value MenuEvent
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    let id = event.id().as_ref();
+    if id == "clear_all_cages" {
+        let _ = app.emit(CLEAR_ALL_CAGES_EVENT, ());
+        return;
+    }
     let Some(state) = app.try_state::<Mutex<Session>>() else {
         return;
     };
-    if let Some(view) = dispatch_menu_action(&state, event.id().as_ref()) {
+    if let Some(view) = dispatch_menu_action(&state, id) {
         let _ = app.emit(PUZZLE_UPDATED_EVENT, view);
     }
 }
@@ -393,6 +414,7 @@ pub fn run() {
             flip_cell,
             move_cell,
             legal_move_targets,
+            clear_all_cages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -857,6 +879,138 @@ mod tests {
         let result = flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
         assert!(result.drafts.is_empty());
         assert_eq!(result.view.cages.len(), 2);
+    }
+
+    #[test]
+    fn clear_all_cages_returns_empty_puzzle() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(2, 0), (2, 1)],
+            OpKind::Add,
+            7,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let view = clear_all_cages(app.state::<Mutex<Session>>()).unwrap();
+        assert!(view.cages.is_empty(), "all cages should be removed");
+        let n = view.n;
+        for row in &view.cells {
+            for cell in row {
+                assert_eq!(
+                    cell.len(),
+                    n,
+                    "each cell should have full candidates after clear"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn clear_all_cages_undoes_to_prior_state() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let view_before_clear = app
+            .state::<Mutex<Session>>()
+            .lock()
+            .unwrap()
+            .current()
+            .cages()
+            .count();
+        clear_all_cages(app.state::<Mutex<Session>>()).unwrap();
+
+        let view_after_undo = undo(app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(
+            view_after_undo.cages.len(),
+            view_before_clear,
+            "undo should restore all cages"
+        );
+    }
+
+    #[test]
+    fn clear_all_cages_on_empty_puzzle_is_noop() {
+        let app = empty_session_app(4);
+        let view = clear_all_cages(app.state::<Mutex<Session>>()).unwrap();
+        assert!(view.cages.is_empty(), "no cages to clear");
+        assert!(view.diff.is_empty(), "no change means empty diff");
+    }
+
+    #[test]
+    fn clear_all_cages_creates_single_undo_entry() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(2, 0), (2, 1)],
+            OpKind::Add,
+            7,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(3, 0), (3, 1)],
+            OpKind::Add,
+            9,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(0, 2), (0, 3)],
+            OpKind::Add,
+            11,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let undo_before = app.state::<Mutex<Session>>().lock().unwrap().undo_count();
+        clear_all_cages(app.state::<Mutex<Session>>()).unwrap();
+        let undo_after = app.state::<Mutex<Session>>().lock().unwrap().undo_count();
+
+        assert_eq!(
+            undo_after,
+            undo_before + 1,
+            "clear_all_cages should push exactly one undo entry"
+        );
     }
 
     #[test]

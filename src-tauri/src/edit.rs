@@ -3,6 +3,7 @@ use kenken::Puzzle;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditKind {
     /// Edit adds a constraint or restricts a domain. Examples: `insert_cage`; `extend_cage`.
+    #[allow(dead_code)] // used in tests and documents the API contract
     Narrowing,
     /// Edit removes a constraint or relaxes a domain. Examples: `remove_cage`; `shrink_cage`; `clear_all_cages`.
     Widening,

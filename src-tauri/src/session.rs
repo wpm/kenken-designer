@@ -53,6 +53,11 @@ impl Session {
         self.undo.clear();
         self.redo.clear();
     }
+
+    #[cfg(test)]
+    pub const fn undo_count(&self) -> usize {
+        self.undo.len()
+    }
 }
 
 #[cfg(test)]
