@@ -313,10 +313,7 @@ pub fn App() -> impl IntoView {
         if cursor.get_untracked() != (r, c) {
             cursor.set((r, c));
         }
-        let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
-        if active_cage.get_untracked() != next_active {
-            active_cage.set(next_active);
-        }
+        set_active_cage_for_cell(puzzle, active_cage, r, c);
         let swapped = drafts.with_untracked(|ds| {
             let i = ds.iter().position(|d| d.cells.contains(&(r, c)))?;
             if i == 0 {
@@ -333,10 +330,7 @@ pub fn App() -> impl IntoView {
 
     let on_cell_right_click = Callback::new(move |(r, c, x, y): (usize, usize, f64, f64)| {
         cursor.set((r, c));
-        let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
-        if active_cage.get_untracked() != next_active {
-            active_cage.set(next_active);
-        }
+        set_active_cage_for_cell(puzzle, active_cage, r, c);
         let items = puzzle.with_untracked(|opt| {
             opt.as_ref().map(|v| {
                 let ds = drafts.with_untracked(Clone::clone);
@@ -1158,16 +1152,27 @@ pub fn dispatch_edit(
     });
 }
 
+// Preserves the prior cage when the cell is uncaged so the tuple strip stays put.
+fn set_active_cage_for_cell(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    active_cage: RwSignal<Option<usize>>,
+    r: usize,
+    c: usize,
+) {
+    let target = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+    let next_active = target.or_else(|| active_cage.get_untracked());
+    if active_cage.get_untracked() != next_active {
+        active_cage.set(next_active);
+    }
+}
+
 pub fn sync_active_cage(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,
 ) {
     let (r, c) = cursor.get_untracked();
-    let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
-    if active_cage.get_untracked() != next_active {
-        active_cage.set(next_active);
-    }
+    set_active_cage_for_cell(puzzle, active_cage, r, c);
 }
 
 fn set_view(

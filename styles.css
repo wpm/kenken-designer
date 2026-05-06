@@ -10,6 +10,9 @@
   --flash-removed-color: var(--c-warning, #c0392b);
   --flash-added-glow: var(--c-accent, #1f77b4);
 
+  --cage-band-width: 192px;
+  --cage-band-gutter: calc(var(--cage-band-width) + 1rem);
+
   font-family: "Inter", system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.5;
@@ -76,7 +79,7 @@ a:hover {
 .app-main {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
   gap: 1.25rem;
   padding: 2rem 1.5rem;
@@ -86,9 +89,9 @@ a:hover {
   color: var(--paper-ink-2);
 }
 
-/* Grid + cage strip share the full horizontal width of the window
-   (minus .app-main padding). The grid fills its flex slot up to the
-   square-aspect cap; the cage strip has fixed width on the right. */
+/* Grid + cage strip span the window's horizontal width (minus
+   .app-main padding); the grid fills its flex slot up to the
+   square-aspect cap, and the cage strip has fixed width on the right. */
 .grid-and-band {
   display: flex;
   flex-direction: row;
@@ -100,26 +103,23 @@ a:hover {
 
 .grid-svg {
   display: block;
-  /* 208px = 192px cage-band width + 1rem gap; keep in sync with cage-band width */
-  width: min(calc(100vw - 3rem - 208px), calc(100vh - 8.25rem));
+  width: min(calc(100vw - 3rem - var(--cage-band-gutter)), calc(100vh - 8.25rem));
   height: auto;
   aspect-ratio: 1 / 1;
 }
 
 .size-control {
-  font-family: "Inter", system-ui, sans-serif;
   color: var(--paper-ink);
-  align-self: center;
+  /* Asymmetric margin shifts the control left of page-center to align with
+     the grid, which itself is offset left by the cage-band column. */
+  margin-right: var(--cage-band-gutter);
 }
 
 /* ── Cage band ─────────────────────────────────────────────────── */
 
-/* Reserves a fixed 192px width (1.5× the prior 128px) so the layout
-   doesn't shift when the band appears/hides. Stretches vertically to
-   match the grid height so available thumbnail rows scale with the
-   viewport. */
+/* Reserves a fixed column so the layout doesn't shift when band appears/hides. */
 .cage-band {
-  width: 192px;
+  width: var(--cage-band-width);
   flex-shrink: 0;
   box-sizing: border-box;
   outline: none;

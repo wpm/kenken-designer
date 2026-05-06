@@ -37,7 +37,10 @@ pub fn next_state(
     match key {
         NavKey::ArrowUp | NavKey::ArrowDown | NavKey::ArrowLeft | NavKey::ArrowRight => {
             let cursor = move_cursor(cursor, n, key);
-            let active = cages.iter().position(|c| c.cells.contains(&cursor));
+            let active = cages
+                .iter()
+                .position(|c| c.cells.contains(&cursor))
+                .or(active_cage);
             (cursor, active)
         }
         NavKey::Tab | NavKey::ShiftTab => {
@@ -186,10 +189,18 @@ mod tests {
     }
 
     #[test]
-    fn arrow_clears_active_cage_when_target_cell_uncaged() {
+    fn arrow_preserves_active_cage_when_target_cell_uncaged() {
         let cages = vec![cage(&[(0, 0)])];
         let (cursor, active) = next_state((0, 0), Some(0), 3, &cages, NavKey::ArrowRight);
         assert_eq!(cursor, (0, 1));
+        assert_eq!(active, Some(0));
+    }
+
+    #[test]
+    fn arrow_leaves_active_cage_none_when_no_prior_and_target_uncaged() {
+        let cages = vec![cage(&[(0, 0)])];
+        let (cursor, active) = next_state((0, 1), None, 3, &cages, NavKey::ArrowRight);
+        assert_eq!(cursor, (0, 2));
         assert_eq!(active, None);
     }
 
