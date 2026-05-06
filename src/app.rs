@@ -150,8 +150,7 @@ fn listen_for_puzzle_updates(
     let cb = Closure::<dyn FnMut(JsValue)>::new(move |event: JsValue| {
         if let Ok(payload) = js_sys::Reflect::get(&event, &JsValue::from_str("payload")) {
             if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(payload) {
-                set_flash_diff.set(view.diff.clone());
-                set_puzzle.set(Some(view));
+                set_view(set_puzzle, set_flash_diff, view);
             }
         }
     });
@@ -368,8 +367,7 @@ pub fn App() -> impl IntoView {
     });
 
     let on_band_commit = Callback::new(move |view: PuzzleView| {
-        set_flash_diff.set(view.diff.clone());
-        set_puzzle.set(Some(view));
+        set_view(set_puzzle, set_flash_diff, view);
     });
 
     view! {
@@ -602,8 +600,7 @@ fn handle_open(
         if let Some(args) = args {
             let value = invoke("load_puzzle", args).await;
             if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(value) {
-                set_flash_diff.set(view.diff.clone());
-                set_puzzle.set(Some(view));
+                set_view(set_puzzle, set_flash_diff, view);
                 current_path.set(Some(path));
             }
         }
@@ -932,8 +929,7 @@ pub fn dispatch_edit(
 ) {
     spawn_local(async move {
         if let Some(result) = fut.await {
-            set_flash_diff.set(result.view.diff.clone());
-            set_puzzle.set(Some(result.view));
+            set_view(set_puzzle, set_flash_diff, result.view);
             let next_drafts = override_draft.map_or(result.drafts, |d| vec![d]);
             set_drafts_if_changed(drafts, next_drafts);
         }
@@ -952,6 +948,15 @@ pub fn sync_active_cage(
     }
 }
 
+fn set_view(
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
+    view: PuzzleView,
+) {
+    set_flash_diff.set(view.diff.clone());
+    set_puzzle.set(Some(view));
+}
+
 fn refresh_from(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
     set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
@@ -968,8 +973,7 @@ fn refresh_from_then(
 ) {
     spawn_local(async move {
         if let Some(view) = fut.await {
-            set_flash_diff.set(view.diff.clone());
-            set_puzzle.set(Some(view));
+            set_view(set_puzzle, set_flash_diff, view);
             on_success();
         }
     });

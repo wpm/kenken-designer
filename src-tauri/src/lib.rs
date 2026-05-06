@@ -892,7 +892,6 @@ mod tests {
             !view.diff.is_empty(),
             "undo of a propagating edit should produce a non-empty diff"
         );
-        // The undone state restores 1 to the peer cells — those should appear as added.
         let has_added = view.diff.changes.iter().any(|cd| !cd.added.is_empty());
         assert!(
             has_added,
