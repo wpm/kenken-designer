@@ -7,6 +7,7 @@ pub fn FlashOverlay(
     cell_size: f64,
     margin: f64,
     n: usize,
+    font_size: f64,
 ) -> impl IntoView {
     let entries: RwSignal<Vec<FlashEntry>> = RwSignal::new(vec![]);
     let generation: RwSignal<u64> = RwSignal::new(0);
@@ -20,7 +21,7 @@ pub fn FlashOverlay(
         let gen = generation.get_untracked() + 1;
         generation.set(gen);
 
-        entries.set(flash_entries(&current_diff, cell_size, margin, n));
+        entries.set(flash_entries(&current_diff, cell_size, margin, n, font_size));
 
         let duration_ms = read_flash_duration_ms().unwrap_or(300.0_f64);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -59,6 +60,7 @@ fn render_flash_entry(entry: FlashEntry) -> impl IntoView {
             y=entry.y
             text-anchor="middle"
             dominant-baseline="central"
+            font-size=entry.font_size
             class=class
         >
             {entry.value.to_string()}

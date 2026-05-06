@@ -25,10 +25,17 @@ pub struct FlashEntry {
     pub y: f64,
     pub value: u8,
     pub removed: bool,
+    pub font_size: f64,
 }
 
 #[must_use]
-pub fn flash_entries(diff: &PuzzleDiff, cell_size: f64, margin: f64, n: usize) -> Vec<FlashEntry> {
+pub fn flash_entries(
+    diff: &PuzzleDiff,
+    cell_size: f64,
+    margin: f64,
+    n: usize,
+    font_size: f64,
+) -> Vec<FlashEntry> {
     if n == 0 {
         return vec![];
     }
@@ -50,6 +57,7 @@ pub fn flash_entries(diff: &PuzzleDiff, cell_size: f64, margin: f64, n: usize) -
                 y,
                 value: v,
                 removed: true,
+                font_size,
             });
         }
         for &v in &change.added {
@@ -59,6 +67,7 @@ pub fn flash_entries(diff: &PuzzleDiff, cell_size: f64, margin: f64, n: usize) -
                 y,
                 value: v,
                 removed: false,
+                font_size,
             });
         }
     }
@@ -90,7 +99,7 @@ mod tests {
     fn empty_diff_is_inert() {
         let diff = PuzzleDiff::default();
         assert!(diff.is_empty());
-        let entries = flash_entries(&diff, 100.0, 14.0, 4);
+        let entries = flash_entries(&diff, 100.0, 14.0, 4, 12.0);
         assert!(
             entries.is_empty(),
             "empty diff should produce no flash entries"
@@ -106,7 +115,7 @@ mod tests {
                 added: vec![],
             }],
         };
-        let entries = flash_entries(&diff, 100.0, 14.0, 4);
+        let entries = flash_entries(&diff, 100.0, 14.0, 4, 12.0);
         let removed: Vec<_> = entries.iter().filter(|e| e.removed).collect();
         assert_eq!(removed.len(), 2, "should have 2 removed flash entries");
         assert!(
@@ -132,7 +141,7 @@ mod tests {
                 added: vec![1, 2],
             }],
         };
-        let entries = flash_entries(&diff, 100.0, 14.0, 4);
+        let entries = flash_entries(&diff, 100.0, 14.0, 4, 12.0);
         let added: Vec<_> = entries.iter().filter(|e| !e.removed).collect();
         assert_eq!(added.len(), 2, "should have 2 added flash entries");
         assert!(added.iter().any(|e| e.value == 1), "digit 1 should appear");
@@ -152,7 +161,24 @@ mod tests {
                 added: vec![],
             }],
         };
-        assert!(flash_entries(&diff, 100.0, 14.0, 0).is_empty());
+        assert!(flash_entries(&diff, 100.0, 14.0, 0, 12.0).is_empty());
+    }
+
+    #[test]
+    fn flash_entries_propagate_font_size() {
+        let diff = PuzzleDiff {
+            changes: vec![CellDiff {
+                cell: (0, 0),
+                removed: vec![1, 2],
+                added: vec![3],
+            }],
+        };
+        let entries = flash_entries(&diff, 100.0, 14.0, 4, 17.5);
+        assert!(!entries.is_empty());
+        assert!(
+            entries.iter().all(|e| (e.font_size - 17.5).abs() < f64::EPSILON),
+            "all flash entries should carry the supplied font_size, got {entries:?}"
+        );
     }
 
     #[test]
@@ -166,7 +192,7 @@ mod tests {
         };
         let cell_size = 100.0_f64;
         let margin = 14.0_f64;
-        let entries = flash_entries(&diff, cell_size, margin, 4);
+        let entries = flash_entries(&diff, cell_size, margin, 4, 12.0);
         for entry in &entries {
             assert!(
                 entry.x >= margin,

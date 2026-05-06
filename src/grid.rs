@@ -180,6 +180,7 @@ pub fn Grid(
                 cell_size=layout.cell
                 margin=MARGIN
                 n=n
+                font_size=layout.candidate_font()
             />
         </svg>
     }
