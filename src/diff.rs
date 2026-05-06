@@ -1,4 +1,4 @@
-use crate::grid::{ceil_sqrt, usize_to_f64};
+use crate::grid::Layout;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct CellDiff {
@@ -27,64 +27,16 @@ pub struct FlashEntry {
     pub removed: bool,
 }
 
-struct SubGrid {
-    cell_size: f64,
-    digit_inset: f64,
-    cols: usize,
-    sub_w: f64,
-    sub_h: f64,
-}
-
-impl SubGrid {
-    fn new(cell_size: f64, digit_inset: f64, n: usize) -> Self {
-        let cols = ceil_sqrt(n).max(1);
-        let rows = n.div_ceil(cols).max(1);
-        let inner = 2.0_f64.mul_add(-digit_inset, cell_size).max(0.0);
-        Self {
-            cell_size,
-            digit_inset,
-            cols,
-            sub_w: inner / usize_to_f64(cols),
-            sub_h: inner / usize_to_f64(rows),
-        }
-    }
-
-    fn digit_center(&self, v: u8, cell_x: f64, cell_y: f64) -> (f64, f64) {
-        let idx = usize::from(v.saturating_sub(1));
-        let sub_r = idx / self.cols;
-        let sub_c = idx % self.cols;
-        let x =
-            usize_to_f64(sub_c).mul_add(self.sub_w, cell_x + self.digit_inset) + self.sub_w / 2.0;
-        let y =
-            usize_to_f64(sub_r).mul_add(self.sub_h, cell_y + self.digit_inset) + self.sub_h / 2.0;
-        (
-            x.min(cell_x + self.cell_size - self.digit_inset),
-            y.min(cell_y + self.cell_size - self.digit_inset),
-        )
-    }
-}
-
 #[must_use]
-pub fn flash_entries(
-    diff: &PuzzleDiff,
-    cell_size: f64,
-    margin: f64,
-    n: usize,
-    digit_inset: f64,
-) -> Vec<FlashEntry> {
-    if n == 0 {
+pub fn flash_entries(diff: &PuzzleDiff, layout: Layout) -> Vec<FlashEntry> {
+    if layout.n == 0 {
         return vec![];
     }
-    let sub = SubGrid::new(cell_size, digit_inset, n);
-
     let mut entries = Vec::new();
     for change in &diff.changes {
         let (row, col) = change.cell;
-        let cell_x = usize_to_f64(col).mul_add(cell_size, margin);
-        let cell_y = usize_to_f64(row).mul_add(cell_size, margin);
-
         for &v in &change.removed {
-            let (x, y) = sub.digit_center(v, cell_x, cell_y);
+            let (x, y) = layout.sub_cell_center(row, col, v);
             entries.push(FlashEntry {
                 x,
                 y,
@@ -93,7 +45,7 @@ pub fn flash_entries(
             });
         }
         for &v in &change.added {
-            let (x, y) = sub.digit_center(v, cell_x, cell_y);
+            let (x, y) = layout.sub_cell_center(row, col, v);
             entries.push(FlashEntry {
                 x,
                 y,
@@ -109,11 +61,15 @@ pub fn flash_entries(
 mod tests {
     use super::*;
 
+    fn test_layout(n: usize, cell: f64) -> Layout {
+        Layout { n, cell }
+    }
+
     #[test]
     fn empty_diff_is_inert() {
         let diff = PuzzleDiff::default();
         assert!(diff.is_empty());
-        let entries = flash_entries(&diff, 100.0, 14.0, 4, 0.0);
+        let entries = flash_entries(&diff, test_layout(4, 100.0));
         assert!(
             entries.is_empty(),
             "empty diff should produce no flash entries"
@@ -129,7 +85,7 @@ mod tests {
                 added: vec![],
             }],
         };
-        let entries = flash_entries(&diff, 100.0, 14.0, 4, 0.0);
+        let entries = flash_entries(&diff, test_layout(4, 100.0));
         let removed: Vec<_> = entries.iter().filter(|e| e.removed).collect();
         assert_eq!(removed.len(), 2, "should have 2 removed flash entries");
         assert!(
@@ -155,7 +111,7 @@ mod tests {
                 added: vec![1, 2],
             }],
         };
-        let entries = flash_entries(&diff, 100.0, 14.0, 4, 0.0);
+        let entries = flash_entries(&diff, test_layout(4, 100.0));
         let added: Vec<_> = entries.iter().filter(|e| !e.removed).collect();
         assert_eq!(added.len(), 2, "should have 2 added flash entries");
         assert!(added.iter().any(|e| e.value == 1), "digit 1 should appear");
@@ -175,49 +131,30 @@ mod tests {
                 added: vec![],
             }],
         };
-        assert!(flash_entries(&diff, 100.0, 14.0, 0, 0.0).is_empty());
+        assert!(flash_entries(&diff, test_layout(0, 100.0)).is_empty());
     }
 
     #[test]
-    fn flash_entries_positions_are_within_cell_bounds() {
+    fn flash_entries_share_layout_positions_with_grid() {
+        let layout = test_layout(4, 100.0);
         let diff = PuzzleDiff {
             changes: vec![CellDiff {
-                cell: (0, 0),
-                removed: vec![1, 2, 3, 4],
-                added: vec![],
+                cell: (1, 2),
+                removed: vec![],
+                added: vec![3],
             }],
         };
-        let cell_size = 100.0_f64;
-        let margin = 14.0_f64;
-        let entries = flash_entries(&diff, cell_size, margin, 4, 0.0);
-        for entry in &entries {
-            assert!(
-                entry.x >= margin,
-                "x={} should be >= margin={margin}",
-                entry.x
-            );
-            assert!(
-                entry.y >= margin,
-                "y={} should be >= margin={margin}",
-                entry.y
-            );
-            assert!(
-                entry.x <= margin + cell_size,
-                "x={} should be <= {}",
-                entry.x,
-                margin + cell_size
-            );
-            assert!(
-                entry.y <= margin + cell_size,
-                "y={} should be <= {}",
-                entry.y,
-                margin + cell_size
-            );
-        }
+        let entries = flash_entries(&diff, layout);
+        assert_eq!(entries.len(), 1);
+        let expected = layout.sub_cell_center(1, 2, 3);
+        assert!((entries[0].x - expected.0).abs() < f64::EPSILON);
+        assert!((entries[0].y - expected.1).abs() < f64::EPSILON);
     }
 
     #[test]
     fn flash_entries_respect_digit_inset() {
+        let layout = test_layout(4, 100.0);
+        let inset = layout.digit_inset();
         let diff = PuzzleDiff {
             changes: vec![CellDiff {
                 cell: (0, 0),
@@ -225,34 +162,32 @@ mod tests {
                 added: vec![],
             }],
         };
-        let cell_size = 100.0_f64;
-        let margin = 14.0_f64;
-        let digit_inset = 20.0_f64;
-        let entries = flash_entries(&diff, cell_size, margin, 4, digit_inset);
+        let entries = flash_entries(&diff, layout);
+        let (left, top) = layout.origin(0, 0);
+        let inner_left = left + inset;
+        let inner_top = top + inset;
+        let inner_right = left + layout.cell - inset;
+        let inner_bottom = top + layout.cell - inset;
         for entry in &entries {
             assert!(
-                entry.x >= margin + digit_inset,
-                "x={} should be >= margin+inset={}",
-                entry.x,
-                margin + digit_inset
+                entry.x >= inner_left,
+                "x={} should be >= inner_left={inner_left}",
+                entry.x
             );
             assert!(
-                entry.y >= margin + digit_inset,
-                "y={} should be >= margin+inset={}",
-                entry.y,
-                margin + digit_inset
+                entry.y >= inner_top,
+                "y={} should be >= inner_top={inner_top}",
+                entry.y
             );
             assert!(
-                entry.x <= margin + cell_size - digit_inset,
-                "x={} should be <= {}",
-                entry.x,
-                margin + cell_size - digit_inset
+                entry.x <= inner_right,
+                "x={} should be <= inner_right={inner_right}",
+                entry.x
             );
             assert!(
-                entry.y <= margin + cell_size - digit_inset,
-                "y={} should be <= {}",
-                entry.y,
-                margin + cell_size - digit_inset
+                entry.y <= inner_bottom,
+                "y={} should be <= inner_bottom={inner_bottom}",
+                entry.y
             );
         }
     }

@@ -1,17 +1,12 @@
 use crate::diff::{flash_entries, FlashEntry, PuzzleDiff};
+use crate::grid::Layout;
 use leptos::prelude::*;
 
 #[component]
-pub fn FlashOverlay(
-    diff: ReadSignal<PuzzleDiff>,
-    cell_size: f64,
-    margin: f64,
-    n: usize,
-    digit_inset: f64,
-    font_size: f64,
-) -> impl IntoView {
+pub fn FlashOverlay(diff: ReadSignal<PuzzleDiff>, layout: Layout) -> impl IntoView {
     let entries: RwSignal<Vec<FlashEntry>> = RwSignal::new(vec![]);
     let generation: RwSignal<u64> = RwSignal::new(0);
+    let font_size = layout.candidate_font();
 
     Effect::new(move |_| {
         let current_diff = diff.get();
@@ -22,13 +17,7 @@ pub fn FlashOverlay(
         let gen = generation.get_untracked() + 1;
         generation.set(gen);
 
-        entries.set(flash_entries(
-            &current_diff,
-            cell_size,
-            margin,
-            n,
-            digit_inset,
-        ));
+        entries.set(flash_entries(&current_diff, layout));
 
         let duration_ms = read_flash_duration_ms().unwrap_or(300.0_f64);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
