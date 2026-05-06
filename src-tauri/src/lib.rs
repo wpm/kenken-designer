@@ -229,12 +229,12 @@ fn rank_active_cage(
     anchor: (usize, usize),
     state: State<Mutex<Session>>,
 ) -> Result<Vec<RankedTupleView>, String> {
-    let (puzzle, cage) = {
-        let session = state.lock().map_err(|e| format!("{e:?}"))?;
-        let puzzle = session.current().clone();
-        let cage = cage_edit::cage_at_or_err(&puzzle, anchor)?.clone();
-        (puzzle, cage)
-    };
+    let puzzle = state
+        .lock()
+        .map_err(|e| format!("{e:?}"))?
+        .current()
+        .clone();
+    let cage = cage_edit::cage_at_or_err(&puzzle, anchor)?.clone();
     let ranked = puzzle
         .rank_tuples_for_cage(&cage)
         .map_err(|e| format!("{e:?}"))?;
@@ -256,12 +256,12 @@ fn apply_narrowing(
     tuple: Vec<u32>,
     state: State<Mutex<Session>>,
 ) -> Result<PuzzleView, String> {
-    let (puzzle, cells) = {
-        let session = state.lock().map_err(|e| format!("{e:?}"))?;
-        let puzzle = session.current().clone();
-        let cells = cage_edit::cage_at_or_err(&puzzle, anchor)?.cells().to_vec();
-        (puzzle, cells)
-    };
+    let puzzle = state
+        .lock()
+        .map_err(|e| format!("{e:?}"))?
+        .current()
+        .clone();
+    let cells = cage_edit::cage_at_or_err(&puzzle, anchor)?.cells().to_vec();
     if cells.len() != tuple.len() {
         return Err(format!(
             "tuple length {} does not match cage size {}",
@@ -1259,12 +1259,12 @@ mod tests {
         assert_eq!(view.n, 3);
         assert_eq!(
             view.cells[0][0],
-            vec![first_tuple[0] as u8],
+            vec![u8::try_from(first_tuple[0]).unwrap()],
             "first cage cell should be pinned to tuple value"
         );
         assert_eq!(
             view.cells[0][1],
-            vec![first_tuple[1] as u8],
+            vec![u8::try_from(first_tuple[1]).unwrap()],
             "second cage cell should be pinned to tuple value"
         );
     }
