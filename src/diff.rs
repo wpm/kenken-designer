@@ -53,8 +53,10 @@ impl SubGrid {
         let idx = usize::from(v.saturating_sub(1));
         let sub_r = idx / self.cols;
         let sub_c = idx % self.cols;
-        let x = usize_to_f64(sub_c).mul_add(self.sub_w, cell_x + self.digit_inset) + self.sub_w / 2.0;
-        let y = usize_to_f64(sub_r).mul_add(self.sub_h, cell_y + self.digit_inset) + self.sub_h / 2.0;
+        let x =
+            usize_to_f64(sub_c).mul_add(self.sub_w, cell_x + self.digit_inset) + self.sub_w / 2.0;
+        let y =
+            usize_to_f64(sub_r).mul_add(self.sub_h, cell_y + self.digit_inset) + self.sub_h / 2.0;
         (
             x.min(cell_x + self.cell_size - self.digit_inset),
             y.min(cell_y + self.cell_size - self.digit_inset),

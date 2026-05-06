@@ -677,7 +677,7 @@ mod tests {
     #[test]
     fn sub_dimensions_use_inner_area() {
         let layout = Layout::new(6, GRID_SIZE);
-        let inner = (layout.cell - 2.0 * layout.digit_inset()).max(0.0);
+        let inner = 2.0_f64.mul_add(-layout.digit_inset(), layout.cell).max(0.0);
         let expected_sub_w = inner / usize_to_f64(layout.cols());
         let expected_sub_h = inner / usize_to_f64(layout.rows());
         assert!((layout.sub_w() - expected_sub_w).abs() < 1e-9);
