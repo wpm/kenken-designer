@@ -21,13 +21,13 @@ const MOVE_TARGET_SELECTED_STROKE: &str = "2.0";
 const MOVE_TARGET_STROKE: &str = "1.0";
 
 #[derive(Clone, Copy)]
-struct Layout {
-    n: usize,
-    cell: f64,
+pub struct Layout {
+    pub n: usize,
+    pub cell: f64,
 }
 
 impl Layout {
-    fn new(n: usize, size: u32) -> Self {
+    pub fn new(n: usize, size: u32) -> Self {
         let cell = MARGIN.mul_add(-2.0, f64::from(size)) / usize_to_f64(n).max(1.0);
         Self { n, cell }
     }
@@ -48,7 +48,7 @@ impl Layout {
         self.inner_extent() / usize_to_f64(self.rows())
     }
 
-    fn candidate_font(&self) -> f64 {
+    pub fn candidate_font(&self) -> f64 {
         (self.sub_w().min(self.sub_h()) * 0.38).max(6.0)
     }
 
@@ -62,7 +62,7 @@ impl Layout {
 
     /// Buffer reserved on every inner edge of a cell so the top-left operator
     /// label has its own space and never overlaps candidate "fill" digits.
-    fn digit_inset(&self) -> f64 {
+    pub fn digit_inset(&self) -> f64 {
         OP_INSET + self.op_font() + 2.0
     }
 
@@ -79,10 +79,25 @@ impl Layout {
         (cell_x + self.cell / 2.0, cell_y + self.cell / 2.0)
     }
 
-    const fn origin(&self, r: usize, c: usize) -> (f64, f64) {
+    pub const fn origin(&self, r: usize, c: usize) -> (f64, f64) {
         (
             usize_to_f64(c).mul_add(self.cell, MARGIN),
             usize_to_f64(r).mul_add(self.cell, MARGIN),
+        )
+    }
+
+    pub fn sub_cell_center(&self, r: usize, c: usize, v: u8) -> (f64, f64) {
+        let (cell_x, cell_y) = self.origin(r, c);
+        let cols = self.cols();
+        let sub_w = self.sub_w();
+        let sub_h = self.sub_h();
+        let inset = self.digit_inset();
+        let idx = usize::from(v.saturating_sub(1));
+        let sub_r = idx / cols;
+        let sub_c = idx % cols;
+        (
+            usize_to_f64(sub_c).mul_add(sub_w, cell_x + inset) + sub_w / 2.0,
+            usize_to_f64(sub_r).mul_add(sub_h, cell_y + inset) + sub_h / 2.0,
         )
     }
 }
@@ -193,14 +208,7 @@ pub fn Grid(
             {move_overlay}
             {cursor_rect}
             {click_overlay}
-            <crate::flash::FlashOverlay
-                diff=flash_diff
-                cell_size=layout.cell
-                margin=MARGIN
-                n=n
-                digit_inset=layout.digit_inset()
-                font_size=layout.candidate_font()
-            />
+            <crate::flash::FlashOverlay diff=flash_diff layout=layout />
         </svg>
     }
 }
@@ -306,10 +314,6 @@ fn render_texts(
     layout: &Layout,
     move_mode: Signal<Option<MoveState>>,
 ) -> impl IntoView {
-    let cols = layout.cols();
-    let sub_w = layout.sub_w();
-    let sub_h = layout.sub_h();
-    let inset = layout.digit_inset();
     let grid: Vec<Vec<Vec<u8>>> = view.cells.clone();
     let layout = *layout;
 
@@ -333,13 +337,7 @@ fn render_texts(
                     let (cx, cy) = if singleton {
                         layout.singleton_center(cell_x, cell_y)
                     } else {
-                        let idx = usize::from(v.saturating_sub(1));
-                        let sub_r = idx / cols;
-                        let sub_c = idx % cols;
-                        (
-                            usize_to_f64(sub_c).mul_add(sub_w, cell_x + inset) + sub_w / 2.0,
-                            usize_to_f64(sub_r).mul_add(sub_h, cell_y + inset) + sub_h / 2.0,
-                        )
+                        layout.sub_cell_center(r, c, v)
                     };
                     out.push(view! {
                         <text
