@@ -314,7 +314,7 @@ pub fn App() -> impl IntoView {
             cursor.set((r, c));
         }
         let target = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
-        let next_active = next_active_for_cursor(active_cage.get_untracked(), target);
+        let next_active = target.or_else(|| active_cage.get_untracked());
         if active_cage.get_untracked() != next_active {
             active_cage.set(next_active);
         }
@@ -335,7 +335,7 @@ pub fn App() -> impl IntoView {
     let on_cell_right_click = Callback::new(move |(r, c, x, y): (usize, usize, f64, f64)| {
         cursor.set((r, c));
         let target = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
-        let next_active = next_active_for_cursor(active_cage.get_untracked(), target);
+        let next_active = target.or_else(|| active_cage.get_untracked());
         if active_cage.get_untracked() != next_active {
             active_cage.set(next_active);
         }
@@ -1160,22 +1160,6 @@ pub fn dispatch_edit(
     });
 }
 
-/// Returns the next `active_cage` for a cursor that just landed on a cell.
-///
-/// If the target cell belongs to a cage, switch to it; otherwise preserve the
-/// previous selection so the cage tuple strip stays put when the cursor crosses
-/// uncaged cells.
-#[must_use]
-pub const fn next_active_for_cursor(
-    prev: Option<usize>,
-    target: Option<usize>,
-) -> Option<usize> {
-    match target {
-        Some(idx) => Some(idx),
-        None => prev,
-    }
-}
-
 pub fn sync_active_cage(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
@@ -1183,7 +1167,9 @@ pub fn sync_active_cage(
 ) {
     let (r, c) = cursor.get_untracked();
     let target = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
-    let next_active = next_active_for_cursor(active_cage.get_untracked(), target);
+    // Preserve the prior cage when the cursor lands on an uncaged cell so the
+    // tuple strip stays put.
+    let next_active = target.or_else(|| active_cage.get_untracked());
     if active_cage.get_untracked() != next_active {
         active_cage.set(next_active);
     }
@@ -1223,18 +1209,6 @@ fn refresh_from_then(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn next_active_for_cursor_switches_to_target_cage() {
-        assert_eq!(next_active_for_cursor(Some(0), Some(1)), Some(1));
-        assert_eq!(next_active_for_cursor(None, Some(2)), Some(2));
-    }
-
-    #[test]
-    fn next_active_for_cursor_preserves_when_target_uncaged() {
-        assert_eq!(next_active_for_cursor(Some(3), None), Some(3));
-        assert_eq!(next_active_for_cursor(None, None), None);
-    }
 
     #[test]
     fn is_text_input_tag_matches_form_controls() {
