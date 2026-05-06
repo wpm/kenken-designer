@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /var/cache/apt/archives
-          key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: apt-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
 
       - name: Install system dependencies
         run: |
@@ -137,7 +137,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /var/cache/apt/archives
-          key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: apt-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
 
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-latest'
