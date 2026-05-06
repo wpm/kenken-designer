@@ -1,4 +1,4 @@
-use crate::app::PuzzleView;
+use crate::app::{PuzzleView, GRID_SIZE};
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
 use crate::cage_index::cage_anchor;
 use crate::grid::{ceil_sqrt, op_label, usize_to_f64, UNCAGED_FILL};
@@ -64,9 +64,9 @@ const BTN_HEIGHT: u32 = 28;
 const THUMB_STEP: u32 = THUMB_SIZE + THUMB_GAP;
 
 /// How many thumbnails fit stacked in the band.
-/// Derived from grid height (560px) minus 2×8px padding, 2×4px gap, `2×BTN_HEIGHT`.
-#[allow(clippy::cast_possible_truncation)] // THUMB_STEP is small; quotient fits in usize
-const VISIBLE_COUNT: usize = ((560 - 2 * BTN_HEIGHT) / THUMB_STEP) as usize;
+/// Derived from `GRID_SIZE` minus 2×8px padding, 2×4px gap, `2×BTN_HEIGHT`.
+#[allow(clippy::cast_possible_truncation)] // GRID_SIZE and THUMB_STEP are small; quotient fits in usize
+const VISIBLE_COUNT: usize = ((GRID_SIZE - 2 * BTN_HEIGHT) / THUMB_STEP) as usize;
 
 // ─── Thumbnail SVG ───────────────────────────────────────────────────────────
 

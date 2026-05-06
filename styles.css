@@ -95,7 +95,7 @@ a:hover {
 
 .grid-svg {
   display: block;
-  /* 144px = 128px cage-band + 1rem gap */
+  /* 144px = 128px cage-band width + 1rem gap; keep in sync with GRID_SIZE/cage-band width */
   width: min(calc(100vw - 3rem - 144px), calc(100vh - 8.25rem));
   height: auto;
   aspect-ratio: 1 / 1;

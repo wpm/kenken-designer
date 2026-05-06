@@ -259,6 +259,8 @@ pub struct ContextMenuState {
     pub items: ContextMenuItems,
 }
 
+pub const GRID_SIZE: u32 = 560;
+
 #[component]
 #[allow(clippy::too_many_lines)]
 pub fn App() -> impl IntoView {
@@ -401,7 +403,7 @@ pub fn App() -> impl IntoView {
                         <Grid
                             view=view
                             drafts=drafts_value
-                            size=560
+                            size=GRID_SIZE
                             cursor=cursor.into()
                             active_cage=active_cage.into()
                             on_cell_click=on_cell_click
