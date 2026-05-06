@@ -259,9 +259,7 @@ fn apply_narrowing(
     let (puzzle, cells) = {
         let session = state.lock().map_err(|e| format!("{e:?}"))?;
         let puzzle = session.current().clone();
-        let cells = cage_edit::cage_at_or_err(&puzzle, anchor)?
-            .cells()
-            .to_vec();
+        let cells = cage_edit::cage_at_or_err(&puzzle, anchor)?.cells().to_vec();
         (puzzle, cells)
     };
     if cells.len() != tuple.len() {
@@ -1209,11 +1207,7 @@ mod tests {
         let ranked = rank_active_cage((0, 0), app.state::<Mutex<Session>>()).unwrap();
         assert!(!ranked.is_empty(), "should return at least one tuple");
         for rt in &ranked {
-            assert_eq!(
-                rt.tuple.len(),
-                2,
-                "each tuple should match cage size of 2"
-            );
+            assert_eq!(rt.tuple.len(), 2, "each tuple should match cage size of 2");
             assert_eq!(rt.view.n, 3, "narrowed view should have correct grid size");
         }
     }
@@ -1239,7 +1233,10 @@ mod tests {
         let reductions: Vec<usize> = ranked.iter().map(|rt| rt.total_reduction).collect();
         let mut sorted = reductions.clone();
         sorted.sort_unstable_by(|a, b| b.cmp(a));
-        assert_eq!(reductions, sorted, "tuples should be sorted by reduction descending");
+        assert_eq!(
+            reductions, sorted,
+            "tuples should be sorted by reduction descending"
+        );
     }
 
     #[test]
@@ -1257,7 +1254,8 @@ mod tests {
         assert!(!ranked.is_empty());
         let first_tuple = ranked[0].tuple.clone();
 
-        let view = apply_narrowing((0, 0), first_tuple.clone(), app.state::<Mutex<Session>>()).unwrap();
+        let view =
+            apply_narrowing((0, 0), first_tuple.clone(), app.state::<Mutex<Session>>()).unwrap();
         assert_eq!(view.n, 3);
         assert_eq!(
             view.cells[0][0],
