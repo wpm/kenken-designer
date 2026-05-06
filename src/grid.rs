@@ -1,4 +1,4 @@
-use crate::app::{CageView, DraftCage, OpKind, PuzzleView};
+use crate::app::{CageView, DraftCage, MoveState, OpKind, PuzzleView};
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
 use crate::cage_edit::effective_cages;
 use crate::cage_index::cage_anchor;
@@ -17,6 +17,9 @@ const ACTIVE_FILL_OPACITY: &str = "0.16";
 const CURSOR_INSET: f64 = 1.5;
 const CURSOR_STROKE: &str = "2.5";
 const CURSOR_STROKE_ENTRY: &str = "3";
+const MOVE_SOURCE_OPACITY: &str = "0.5";
+const MOVE_TARGET_SELECTED_STROKE: &str = "2.0";
+const MOVE_TARGET_STROKE: &str = "1.0";
 
 #[derive(Clone, Copy)]
 struct Layout {
@@ -111,6 +114,7 @@ pub fn Grid(
     on_cell_right_click: Callback<(usize, usize, f64, f64)>,
     entry: Signal<Option<OperatorEntry>>,
     flash_diff: ReadSignal<crate::diff::PuzzleDiff>,
+    move_mode: Signal<Option<MoveState>>,
 ) -> impl IntoView {
     let n = view.n;
     debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
@@ -121,11 +125,12 @@ pub fn Grid(
     let cell_cage = build_cell_cage_map(n, &effective);
 
     let cells_view = render_cells(&layout, &cell_cage, &palette_idx);
-    let texts_view = render_texts(&view, &layout);
+    let texts_view = render_texts(&view, &layout, move_mode);
     let lines = render_gridlines(&layout, &cell_cage);
     let outer_size = layout.cell * usize_to_f64(n);
     let op_labels = render_op_labels(&effective, draft_idx, &layout, entry);
-    let cages = view.cages;
+    let cages = view.cages.clone();
+    let view_for_move = view;
 
     let active_overlay = move || {
         active_cage
@@ -137,6 +142,13 @@ pub fn Grid(
     let cursor_rect = move || cursor_rect_view(cursor.get(), layout, entry.get().is_some());
 
     let click_overlay = render_click_overlay(layout, on_cell_click, on_cell_right_click);
+
+    // Move-mode overlays: source cell half opacity, target cages with dashed border.
+    let move_overlay = move || {
+        move_mode
+            .get()
+            .map(|state| render_move_overlays(&state, &view_for_move, layout))
+    };
 
     view! {
         <svg
@@ -160,6 +172,7 @@ pub fn Grid(
             />
             {op_labels}
             {active_overlay}
+            {move_overlay}
             {cursor_rect}
             {click_overlay}
             <crate::flash::FlashOverlay
@@ -268,53 +281,65 @@ fn render_cells(
         .collect()
 }
 
-fn render_texts(view: &PuzzleView, layout: &Layout) -> Vec<impl IntoView> {
-    let n = layout.n;
+fn render_texts(
+    view: &PuzzleView,
+    layout: &Layout,
+    move_mode: Signal<Option<MoveState>>,
+) -> impl IntoView {
     let cols = layout.cols();
     let sub_w = layout.sub_w();
     let sub_h = layout.sub_h();
-    let mut out = Vec::new();
-    for r in 0..n {
-        for c in 0..n {
-            let cell_data = &view.cells[r][c];
-            let (cell_x, cell_y) = layout.origin(r, c);
-            let singleton = cell_data.len() == 1;
-            let style = if singleton {
-                TextStyle::singleton(layout)
-            } else {
-                TextStyle::candidate(layout)
-            };
-            for &v in cell_data {
-                let (cx, cy) = if singleton {
-                    (cell_x + layout.cell / 2.0, cell_y + layout.cell / 2.0)
+    let grid: Vec<Vec<Vec<u8>>> = view.cells.clone();
+    let layout = *layout;
+
+    move || {
+        let source_cell = move_mode.get().map(|s| s.cell);
+        let mut out = Vec::new();
+        for (r, row) in grid.iter().enumerate() {
+            for (c, candidates) in row.iter().enumerate() {
+                // In move mode, skip candidates for the source cell
+                if source_cell == Some((r, c)) {
+                    continue;
+                }
+                let (cell_x, cell_y) = layout.origin(r, c);
+                let singleton = candidates.len() == 1;
+                let style = if singleton {
+                    TextStyle::singleton(&layout)
                 } else {
-                    let idx = usize::from(v.saturating_sub(1));
-                    let sub_r = idx / cols;
-                    let sub_c = idx % cols;
-                    (
-                        usize_to_f64(sub_c).mul_add(sub_w, cell_x) + sub_w / 2.0,
-                        usize_to_f64(sub_r).mul_add(sub_h, cell_y) + sub_h / 2.0,
-                    )
+                    TextStyle::candidate(&layout)
                 };
-                out.push(view! {
-                    <text
-                        x=cx
-                        y=cy
-                        text-anchor="middle"
-                        dominant-baseline="central"
-                        font-family=SERIF_FONT
-                        font-size=style.size
-                        fill=style.fill
-                        opacity=style.opacity
-                        font-weight=style.weight
-                    >
-                        {v.to_string()}
-                    </text>
-                });
+                for &v in candidates {
+                    let (cx, cy) = if singleton {
+                        (cell_x + layout.cell / 2.0, cell_y + layout.cell / 2.0)
+                    } else {
+                        let idx = usize::from(v.saturating_sub(1));
+                        let sub_r = idx / cols;
+                        let sub_c = idx % cols;
+                        (
+                            usize_to_f64(sub_c).mul_add(sub_w, cell_x) + sub_w / 2.0,
+                            usize_to_f64(sub_r).mul_add(sub_h, cell_y) + sub_h / 2.0,
+                        )
+                    };
+                    out.push(view! {
+                        <text
+                            x=cx
+                            y=cy
+                            text-anchor="middle"
+                            dominant-baseline="central"
+                            font-family=SERIF_FONT
+                            font-size=style.size
+                            fill=style.fill
+                            opacity=style.opacity
+                            font-weight=style.weight
+                        >
+                            {v.to_string()}
+                        </text>
+                    });
+                }
             }
         }
+        out
     }
-    out
 }
 
 fn render_gridlines(layout: &Layout, cell_cage: &[Vec<Option<usize>>]) -> Vec<impl IntoView> {
@@ -429,6 +454,72 @@ fn render_op_labels(
             }
         })
         .collect()
+}
+
+/// Render overlays for move mode:
+/// - Source cell: white overlay at half opacity (dims the cell)
+/// - Currently-selected target cage cells: dashed accent border
+/// - Other legal target cage cells: thin accent border
+fn render_move_overlays(state: &MoveState, view: &PuzzleView, layout: Layout) -> Vec<AnyView> {
+    let cell = layout.cell;
+    let mut out: Vec<AnyView> = Vec::new();
+
+    // Source cell overlay: half opacity white rectangle
+    let (sx, sy) = layout.origin(state.cell.0, state.cell.1);
+    out.push(
+        view! {
+            <rect
+                x=sx
+                y=sy
+                width=cell
+                height=cell
+                fill="white"
+                fill-opacity=MOVE_SOURCE_OPACITY
+                pointer-events="none"
+            />
+        }
+        .into_any(),
+    );
+
+    // Target cage overlays
+    for (i, &target_anchor) in state.targets.iter().enumerate() {
+        let is_selected = state.selected == Some(i);
+        let stroke_width = if is_selected {
+            MOVE_TARGET_SELECTED_STROKE
+        } else {
+            MOVE_TARGET_STROKE
+        };
+        let dash = if is_selected { "4,3" } else { "" };
+
+        // Find target cage cells
+        if let Some(cage) = view
+            .cages
+            .iter()
+            .find(|cage| cage_anchor(cage) == target_anchor)
+        {
+            for &(r, c) in &cage.cells {
+                let (x, y) = layout.origin(r, c);
+                out.push(
+                    view! {
+                        <rect
+                            x=x
+                            y=y
+                            width=cell
+                            height=cell
+                            fill="none"
+                            stroke=ACCENT
+                            stroke-width=stroke_width
+                            stroke-dasharray=dash
+                            pointer-events="none"
+                        />
+                    }
+                    .into_any(),
+                );
+            }
+        }
+    }
+
+    out
 }
 
 const fn is_thick_border(a: Option<usize>, b: Option<usize>) -> bool {

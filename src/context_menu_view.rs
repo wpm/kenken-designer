@@ -1,21 +1,16 @@
 use crate::app::{
-    apply_edit, call_edit, dispatch_edit, sync_active_cage, ContextMenuState, DraftCage,
-    FlipCellArgs, PuzzleView,
+    apply_edit, sync_active_cage, ContextMenuState, DraftCage, MoveState, PuzzleView,
 };
 use crate::cage_edit::{delete_at, escape_at, splinter_at};
 use crate::cage_index::cage_anchor;
 use crate::operator_entry::{ActiveCage, OperatorEntry};
-use crate::theme::{BG, INK, INK3, LINE, SANS_FONT};
+use crate::theme::{BG, INK, LINE, SANS_FONT};
 use leptos::prelude::*;
 use leptos::web_sys;
 use wasm_bindgen::JsCast;
 
 fn item_style() -> String {
     format!("padding:5px 14px;cursor:pointer;white-space:nowrap;color:{INK};user-select:none;")
-}
-
-fn label_style() -> String {
-    format!("padding:3px 14px 1px;font-size:11px;color:{INK3};pointer-events:none;")
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -53,6 +48,7 @@ pub fn ContextMenu(
     active_cage: RwSignal<Option<usize>>,
     cursor: RwSignal<(usize, usize)>,
     entry: RwSignal<Option<OperatorEntry>>,
+    move_mode: RwSignal<Option<MoveState>>,
     on_close: Callback<()>,
 ) -> impl IntoView {
     let (r, c) = state.cell;
@@ -67,8 +63,6 @@ pub fn ContextMenu(
          border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:1000;\
          font-family:{SANS_FONT};font-size:12.5px;min-width:160px;padding:3px 0;"
     );
-
-    let sep_style = format!("height:1px;background:{LINE};margin:3px 0;");
 
     view! {
         <div style=menu_style>
@@ -174,39 +168,32 @@ pub fn ContextMenu(
                     "Delete cage"
                 </div>
             })}
-            {(!items.adjacent_targets.is_empty()).then({
-                let targets = items.adjacent_targets;
-                move || view! {
-                    <div style=sep_style />
-                    <div style=label_style()>"Flip to cage\u{2026}"</div>
-                    {targets.iter().map(|ft| {
-                        let anchor = ft.anchor;
-                        let label = ft.label.clone();
-                        let close2 = close;
-                        view! {
-                            <div
-                                style=item_style()
-                                on:mouseenter=item_enter
-                                on:mouseleave=item_leave
-                                on:mousedown=move |ev: leptos::ev::MouseEvent| {
-                                    ev.prevent_default();
-                                    dispatch_edit(
-                                        set_puzzle,
-                                        set_flash_diff,
-                                        drafts,
-                                        Box::pin(call_edit("flip_cell", FlipCellArgs {
-                                            cell: (r, c),
-                                            target_anchor: anchor,
-                                        })),
-                                        None,
-                                    );
-                                    close2();
-                                }
-                            >
-                                {format!("  {label}")}
-                            </div>
+            {items.can_move.then(|| {
+                let close2 = close;
+                view! {
+                    <div
+                        style=item_style()
+                        on:mouseenter=item_enter
+                        on:mouseleave=item_leave
+                        on:mousedown=move |ev: leptos::ev::MouseEvent| {
+                            ev.prevent_default();
+                            let targets = puzzle.with_untracked(|opt| {
+                                opt.as_ref().map_or_else(Vec::new, |v| {
+                                    crate::cage_edit::legal_move_targets(v, (r, c))
+                                })
+                            });
+                            if !targets.is_empty() {
+                                move_mode.set(Some(MoveState {
+                                    cell: (r, c),
+                                    targets,
+                                    selected: None,
+                                }));
+                            }
+                            close2();
                         }
-                    }).collect::<Vec<_>>()}
+                    >
+                        "Move cell\u{2026}"
+                    </div>
                 }
             })}
         </div>

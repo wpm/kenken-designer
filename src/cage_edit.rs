@@ -126,6 +126,81 @@ fn remove_from_draft(draft: Option<&DraftCage>, cell: (usize, usize)) -> Option<
     (!cells.is_empty()).then_some(DraftCage { cells })
 }
 
+/// Check whether a set of cells is 4-connected.
+fn is_connected(cells: &[(usize, usize)]) -> bool {
+    if cells.len() <= 1 {
+        return true;
+    }
+    let mut visited = vec![false; cells.len()];
+    let mut stack = vec![0usize];
+    visited[0] = true;
+    while let Some(idx) = stack.pop() {
+        let (r, c) = cells[idx];
+        for j in 0..cells.len() {
+            if visited[j] {
+                continue;
+            }
+            let (r2, c2) = cells[j];
+            let dr = r.abs_diff(r2);
+            let dc = c.abs_diff(c2);
+            if (dr == 1 && dc == 0) || (dr == 0 && dc == 1) {
+                visited[j] = true;
+                stack.push(j);
+            }
+        }
+    }
+    visited.iter().all(|&v| v)
+}
+
+/// Returns anchor cells (row-major sorted) of cages that are legal targets for moving `cell`.
+///
+/// Returns empty if: cell is in no cage, or removing cell from its cage would disconnect it
+/// (unless the cage is a singleton).
+#[must_use]
+pub fn legal_move_targets(view: &PuzzleView, cell: (usize, usize)) -> Vec<(usize, usize)> {
+    let (r, c) = cell;
+    let Some(src_idx) = cage_at(view, r, c) else {
+        return Vec::new();
+    };
+    let src_cells = &view.cages[src_idx].cells;
+
+    // If the source has more than one cell, check connectivity after removal.
+    if src_cells.len() > 1 {
+        let remaining: Vec<(usize, usize)> =
+            src_cells.iter().copied().filter(|&p| p != cell).collect();
+        if !is_connected(&remaining) {
+            return Vec::new();
+        }
+    }
+
+    let n = view.n;
+    let neighbors: &[(isize, isize)] = &[(-1, 0), (1, 0), (0, -1), (0, 1)];
+    let mut targets: Vec<(usize, usize)> = Vec::new();
+
+    for &(dr, dc) in neighbors {
+        let Some(nr) = r.checked_add_signed(dr) else {
+            continue;
+        };
+        let Some(nc) = c.checked_add_signed(dc) else {
+            continue;
+        };
+        if nr >= n || nc >= n {
+            continue;
+        }
+        if let Some(tgt_idx) = cage_at(view, nr, nc) {
+            if tgt_idx != src_idx {
+                let anchor = cage_anchor(&view.cages[tgt_idx]);
+                if !targets.contains(&anchor) {
+                    targets.push(anchor);
+                }
+            }
+        }
+    }
+
+    targets.sort_unstable();
+    targets
+}
+
 /// Augmented cage list for rendering: committed cages plus any drafts appended at the end.
 /// The returned `first_draft_idx` points to the first draft's position when present.
 #[must_use]

@@ -163,30 +163,64 @@ pub fn do_clear_all_cages(puzzle: Puzzle) -> Puzzle {
     polys.iter().fold(puzzle, Puzzle::remove_cage)
 }
 
-pub fn do_flip_cell(
-    puzzle: &Puzzle,
-    cell: (usize, usize),
-    target_anchor: (usize, usize),
-) -> Result<(Puzzle, Vec<DraftCage>), String> {
-    let n = puzzle_size_u8(puzzle)?;
+/// Returns anchor cells (row-major sorted) of cages that are legal targets for moving `cell`.
+///
+/// A cage is a legal target if:
+/// - It is 4-adjacent to `cell`
+/// - It is a different cage from `cell`'s current cage
+///
+/// Returns empty if: cell is in no cage, or removing cell from its cage would disconnect it
+/// (unless the cage is a singleton).
+pub fn legal_move_targets(puzzle: &Puzzle, cell: (usize, usize)) -> Vec<(usize, usize)> {
     let cell_obj = Cell::new(cell.0, cell.1);
-
-    let src_cage = puzzle
-        .cage_at(cell_obj)
-        .ok_or_else(|| format!("no cage at ({}, {})", cell.0, cell.1))?;
-    let src_op = src_cage.operation();
+    let Some(src_cage) = puzzle.cage_at(cell_obj) else {
+        return Vec::new();
+    };
     let src_poly = src_cage.polyomino().clone();
 
-    let tgt_cage = cage_at_or_err(puzzle, target_anchor)?;
-    if tgt_cage.polyomino() == &src_poly {
-        return Err("cell is already in target cage".into());
+    // If src has more than one cell, check that removing `cell` keeps it connected.
+    if src_poly.len() > 1 && src_poly.without(cell_obj).is_err() {
+        return Vec::new();
     }
-    let tgt_op = tgt_cage.operation();
-    let tgt_poly = tgt_cage.polyomino().clone();
 
+    let n = puzzle.n();
+    let mut targets: Vec<(usize, usize)> = Vec::new();
+
+    for neighbor in cell_obj.neighbors_4() {
+        if neighbor.row >= n || neighbor.column >= n {
+            continue;
+        }
+        if let Some(tgt_cage) = puzzle.cage_at(neighbor) {
+            if tgt_cage.polyomino() != &src_poly {
+                let anchor = tgt_cage
+                    .polyomino()
+                    .as_slice()
+                    .first()
+                    .map_or((0, 0), |c| (c.row, c.column));
+                if !targets.contains(&anchor) {
+                    targets.push(anchor);
+                }
+            }
+        }
+    }
+
+    targets.sort_unstable();
+    targets
+}
+
+/// Shared mutation logic for `do_move_cell` and `do_flip_cell`: removes `cell_obj` from
+/// `src_poly`, adds it to `tgt_poly`, and reinserts both (or drafts them) as appropriate.
+fn apply_cell_transfer(
+    puzzle: &Puzzle,
+    n: u8,
+    cell_obj: Cell,
+    src_poly: &Polyomino,
+    src_op: Operation,
+    tgt_poly: &Polyomino,
+    tgt_op: Operation,
+) -> Result<(Puzzle, Vec<DraftCage>), String> {
     let new_tgt_poly = tgt_poly.extend(cell_obj).map_err(|e| format!("{e:?}"))?;
-
-    let intermediate = puzzle.clone().remove_cage(&src_poly).remove_cage(&tgt_poly);
+    let intermediate = puzzle.clone().remove_cage(src_poly).remove_cage(tgt_poly);
     let mut drafts = Vec::new();
 
     let next = if src_poly.len() == 1 {
@@ -216,6 +250,61 @@ pub fn do_flip_cell(
         });
         Ok((next, drafts))
     }
+}
+
+pub fn do_move_cell(
+    puzzle: &Puzzle,
+    cell: (usize, usize),
+    target_anchor: (usize, usize),
+) -> Result<(Puzzle, Vec<DraftCage>), String> {
+    let n = puzzle_size_u8(puzzle)?;
+    let cell_obj = Cell::new(cell.0, cell.1);
+
+    let src_cage = puzzle
+        .cage_at(cell_obj)
+        .ok_or_else(|| format!("no cage at ({}, {})", cell.0, cell.1))?;
+    let src_op = src_cage.operation();
+    let src_poly = src_cage.polyomino().clone();
+
+    let tgt_cage = cage_at_or_err(puzzle, target_anchor)?;
+    if tgt_cage.polyomino() == &src_poly {
+        return Err("target cage is the same as source cage".into());
+    }
+    let tgt_op = tgt_cage.operation();
+    let tgt_poly = tgt_cage.polyomino().clone();
+
+    if !cell_obj.neighbors_4().any(|nb| tgt_poly.contains_cell(nb)) {
+        return Err("cell is not adjacent to target cage".into());
+    }
+    if src_poly.len() > 1 && src_poly.without(cell_obj).is_err() {
+        return Err("removing cell would disconnect source cage".into());
+    }
+
+    apply_cell_transfer(puzzle, n, cell_obj, &src_poly, src_op, &tgt_poly, tgt_op)
+}
+
+pub fn do_flip_cell(
+    puzzle: &Puzzle,
+    cell: (usize, usize),
+    target_anchor: (usize, usize),
+) -> Result<(Puzzle, Vec<DraftCage>), String> {
+    let n = puzzle_size_u8(puzzle)?;
+    let cell_obj = Cell::new(cell.0, cell.1);
+
+    let src_cage = puzzle
+        .cage_at(cell_obj)
+        .ok_or_else(|| format!("no cage at ({}, {})", cell.0, cell.1))?;
+    let src_op = src_cage.operation();
+    let src_poly = src_cage.polyomino().clone();
+
+    let tgt_cage = cage_at_or_err(puzzle, target_anchor)?;
+    if tgt_cage.polyomino() == &src_poly {
+        return Err("cell is already in target cage".into());
+    }
+    let tgt_op = tgt_cage.operation();
+    let tgt_poly = tgt_cage.polyomino().clone();
+
+    apply_cell_transfer(puzzle, n, cell_obj, &src_poly, src_op, &tgt_poly, tgt_op)
 }
 
 #[cfg(test)]
@@ -582,5 +671,136 @@ mod tests {
             .insert_cage(add_cage(&[(2, 0), (2, 1)], 5, 4))
             .unwrap();
         assert!(do_flip_cell(&p, (0, 0), (2, 0)).is_err());
+    }
+
+    // --- legal_move_targets tests ---
+
+    /// 5-cell I-pentomino in row 0: inner cells (columns 1, 2, 3) cannot be removed
+    /// without disconnecting the source cage, so they get no legal targets.
+    #[test]
+    fn legal_move_targets_excludes_disconnecting_cells() {
+        // Row 0: cells (0,0)..(0,4) form a single cage.
+        // A 6x6 puzzle gives room for adjacent cages in row 1.
+        let p = Puzzle::new(6)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], 15, 6))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 2)], 2, 6))
+            .unwrap(); // adjacent to inner cell (0,2)
+                       // Inner cell (0,2) — removing it disconnects the I-pentomino
+        assert!(legal_move_targets(&p, (0, 2)).is_empty());
+    }
+
+    /// A corner cell in a 3-cell L-cage is adjacent to two different cages.
+    /// Both should appear in sorted row-major order.
+    #[test]
+    fn legal_move_targets_includes_corner_neighbors() {
+        // Cage A: (0,0), (0,1)  anchor (0,0)
+        // Cage B: (1,0), (1,1)  anchor (1,0)
+        // Moving (0,0) from Cage A: it is adjacent to Cage B via (1,0).
+        // (0,0) is an end cell of the 2-cell cage so removal keeps it connected (only 1 remains).
+        // Actually "removing from 2-cell cage" produces singleton — still connected.
+        // Cage B anchor should appear.
+        // Let's also add Cage C adjacent to (0,0) from the left — not possible at column 0.
+        // Instead use a 3x3 grid: cage at (0,1) adjacent to (0,0) too.
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (1, 0)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 1), (0, 2)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 1), (1, 2)], 5, 4))
+            .unwrap();
+        // Moving (0,0) from cage (0,0)-(1,0): it is adjacent to cage anchored at (0,1).
+        // After removal source becomes singleton (1,0) — still connected.
+        let targets = legal_move_targets(&p, (0, 0));
+        assert!(
+            targets.contains(&(0, 1)),
+            "should include cage anchored at (0,1): got {targets:?}"
+        );
+        // Not adjacent to (1,1) cage directly from (0,0) — (1,1) is diagonal not 4-adjacent
+        // Actually (0,0)'s 4-neighbors are (1,0) [same cage] and (0,1) [target cage].
+        assert_eq!(targets, vec![(0, 1)], "expected exactly one target");
+    }
+
+    /// A 1-cell singleton cage adjacent to exactly one other cage → that cage is the sole target.
+    #[test]
+    fn legal_move_targets_includes_only_target_for_singleton_source() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0)], 1, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 1), (0, 2)], 3, 4))
+            .unwrap();
+        let targets = legal_move_targets(&p, (0, 0));
+        assert_eq!(targets, vec![(0, 1)]);
+    }
+
+    // --- do_move_cell tests ---
+
+    /// 2-cell Add(3) cage adjacent to 3-cell Mul(24) cage; move corner cell.
+    /// Both cages should stay valid (Add and Mul are size-agnostic).
+    #[test]
+    fn move_cell_command_happy_path() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(mul_cage(&[(1, 0), (1, 1), (1, 2)], 24, 4))
+            .unwrap();
+        // Move (0,0) from the Add cage to the Mul cage — (0,0) is adjacent to (1,0).
+        let (next, drafts) = do_move_cell(&p, (0, 0), (1, 0)).unwrap();
+        assert!(drafts.is_empty(), "no draft expected: {drafts:?}");
+        // Source cage now has 1 cell: (0,1)
+        assert!(next.is_covered(Cell::new(0, 1)));
+        let src = next.cage_at(Cell::new(0, 1)).unwrap();
+        assert_eq!(src.cells().len(), 1);
+        // Target cage now has 4 cells
+        let tgt = next.cage_at(Cell::new(1, 0)).unwrap();
+        assert_eq!(tgt.cells().len(), 4);
+    }
+
+    /// Moving the only cell of a singleton cage causes the source cage to be removed.
+    #[test]
+    fn move_cell_command_deletes_source_when_last_cell_moves() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0)], 1, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 1), (0, 2)], 3, 4))
+            .unwrap();
+        let (next, drafts) = do_move_cell(&p, (0, 0), (0, 1)).unwrap();
+        assert!(drafts.is_empty());
+        // Source cage (0,0) should no longer exist
+        assert!(
+            !next.is_covered(Cell::new(0, 0)) || {
+                // (0,0) might now be part of the target — check it's in the target
+                next.cage_at(Cell::new(0, 0))
+                    .is_some_and(|c| c.cells().len() == 3)
+            }
+        );
+        // Target should have 3 cells now
+        let tgt = next.cage_at(Cell::new(0, 0)).unwrap();
+        assert_eq!(tgt.cells().len(), 3);
+        // Only 1 cage total
+        assert_eq!(next.cages().count(), 1);
+    }
+
+    /// Trying to move an inner cell of an I-pentomino should fail.
+    #[test]
+    fn move_cell_command_rejects_disconnecting_move() {
+        let p = Puzzle::new(6)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], 15, 6))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 2)], 2, 6))
+            .unwrap();
+        // Inner cell (0,2): removing it disconnects source
+        assert!(do_move_cell(&p, (0, 2), (1, 2)).is_err());
+    }
+
+    fn mul_cage(cells: &[(usize, usize)], target: u16, n: u8) -> Cage {
+        let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
+        Cage::new(n, Polyomino::new(&cells), Operation::Multiply(target))
     }
 }
