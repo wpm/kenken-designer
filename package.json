@@ -1,0 +1,12 @@
+{
+  "name": "kenken-designer",
+  "private": true,
+  "scripts": {
+    "tw:build": "tailwindcss -i tailwind.css -o tailwind-out.css",
+    "tw:watch": "tailwindcss -i tailwind.css -o tailwind-out.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.2.4",
+    "tailwindcss": "^4.2.4"
+  }
+}
