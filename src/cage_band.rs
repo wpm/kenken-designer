@@ -1,4 +1,4 @@
-use crate::app::{PuzzleView, GRID_SIZE};
+use crate::app::PuzzleView;
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
 use crate::cage_index::cage_anchor;
 use crate::grid::{ceil_sqrt, op_label, usize_to_f64, UNCAGED_FILL};
@@ -7,6 +7,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 #[wasm_bindgen]
 extern "C" {
@@ -53,20 +54,95 @@ async fn call_apply_narrowing(anchor: (usize, usize), tuple: Vec<u32>) -> Option
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 
-/// Side length of each thumbnail (square).
-const THUMB_SIZE: u32 = 112;
+/// Side length of each thumbnail (square). Sized to match the strip width
+/// (192px) minus the strip's horizontal padding so thumbnails fill the band.
+const THUMB_SIZE: u32 = 168;
 /// Gap between thumbnails.
 const THUMB_GAP: u32 = 8;
-/// Height of the up/down advance buttons.
-const BTN_HEIGHT: u32 = 28;
 
 /// Total height each thumbnail occupies including gap.
 const THUMB_STEP: u32 = THUMB_SIZE + THUMB_GAP;
 
-/// How many thumbnails fit stacked in the band.
-/// Derived from `GRID_SIZE` minus 2×8px padding, 2×4px gap, `2×BTN_HEIGHT`.
-#[allow(clippy::cast_possible_truncation)] // GRID_SIZE and THUMB_STEP are small; quotient fits in usize
-const VISIBLE_COUNT: usize = ((GRID_SIZE - 2 * BTN_HEIGHT) / THUMB_STEP) as usize;
+/// Conservative fallback for visible-thumbnail count when the strip element
+/// has not yet been measured (e.g. the first render). `fits_in_strip` will
+/// replace this once the DOM is laid out.
+const DEFAULT_VISIBLE_COUNT: usize = 1;
+
+/// HTML data attribute used to identify a thumbnail by its ranked-tuple index
+/// from event targets and `document.querySelector`.
+const THUMB_DATA_ATTR: &str = "data-thumb-idx";
+
+// ─── Pure helpers (testable) ────────────────────────────────────────────────
+
+/// Number of thumbnails (each occupying `step_px` including its gap) that
+/// fit in `strip_height_px` pixels of available height. Always returns at
+/// least 1 so the UI can render before the strip has been measured.
+const fn fits_in_strip(strip_height_px: i32, step_px: u32) -> usize {
+    if strip_height_px <= 0 || step_px == 0 {
+        return 1;
+    }
+    #[allow(clippy::cast_sign_loss)]
+    let h = strip_height_px as usize;
+    let s = step_px as usize;
+    let n = h / s;
+    if n == 0 {
+        1
+    } else {
+        n
+    }
+}
+
+/// Largest valid scroll offset so that `offset + visible <= total`. Returns
+/// 0 when everything fits (`visible >= total`).
+const fn max_scroll_offset(visible: usize, total: usize) -> usize {
+    total.saturating_sub(visible)
+}
+
+/// Whether the strip can be scrolled up from the given offset.
+const fn can_scroll_up_at(offset: usize) -> bool {
+    offset > 0
+}
+
+/// Whether the strip can be scrolled down to reveal further thumbnails.
+const fn can_scroll_down_at(offset: usize, visible: usize, total: usize) -> bool {
+    offset + visible < total
+}
+
+/// Compute the new (`focused`, `scroll_offset`) after pressing `ArrowUp` on
+/// the thumbnail at `focused`. Returns `None` if focus is already at the top.
+const fn arrow_up_target(focused: usize, scroll: usize) -> Option<(usize, usize)> {
+    if focused == 0 {
+        return None;
+    }
+    let new_focused = focused - 1;
+    let new_scroll = if new_focused < scroll {
+        new_focused
+    } else {
+        scroll
+    };
+    Some((new_focused, new_scroll))
+}
+
+/// Compute the new (`focused`, `scroll_offset`) after pressing `ArrowDown`
+/// on the thumbnail at `focused`. Returns `None` if focus is already at the
+/// last thumbnail (or the list is empty).
+const fn arrow_down_target(
+    focused: usize,
+    scroll: usize,
+    visible: usize,
+    total: usize,
+) -> Option<(usize, usize)> {
+    if total == 0 || focused + 1 >= total {
+        return None;
+    }
+    let new_focused = focused + 1;
+    let new_scroll = if visible > 0 && new_focused >= scroll + visible {
+        new_focused + 1 - visible
+    } else {
+        scroll
+    };
+    Some((new_focused, new_scroll))
+}
 
 // ─── Thumbnail SVG ───────────────────────────────────────────────────────────
 
@@ -78,12 +154,7 @@ const THUMB_ACTIVE_OPACITY: &str = "0.22";
 
 /// Draw a single thumbnail SVG for one `RankedTuple`, highlighting `active_cells`.
 #[component]
-fn Thumbnail(
-    rt: RankedTuple,
-    active_cells: Vec<(usize, usize)>,
-    selected: Signal<bool>,
-    on_click: Callback<()>,
-) -> impl IntoView {
+fn Thumbnail(rt: RankedTuple, active_cells: Vec<(usize, usize)>) -> impl IntoView {
     let n = rt.view.n;
     if n == 0 {
         return view! { <svg /> }.into_any();
@@ -249,26 +320,13 @@ fn Thumbnail(
 
     let outer_size = usize_to_f64(n) * cell_px;
 
-    let ring_stroke = move || {
-        if selected.get() {
-            ACCENT
-        } else {
-            "transparent"
-        }
-    };
-
     view! {
         <svg
             viewBox=format!("0 0 {size} {size}")
             width=size
             height=size
             xmlns="http://www.w3.org/2000/svg"
-            style="cursor:pointer;flex-shrink:0;"
-            on:mousedown=move |ev: leptos::ev::MouseEvent| {
-                if ev.button() == 0 {
-                    on_click.run(());
-                }
-            }
+            style="display:block;flex-shrink:0;pointer-events:none;"
         >
             <rect x="0" y="0" width=size height=size fill=BG />
             {cell_fills}
@@ -285,19 +343,48 @@ fn Thumbnail(
                 stroke-width=THUMB_OUTER_STROKE
             />
             {op_labels}
-            <rect
-                x="1" y="1"
-                width=size - 2
-                height=size - 2
-                fill="none"
-                stroke=ring_stroke
-                stroke-width="2.5"
-                rx="3"
-                pointer-events="none"
-            />
         </svg>
     }
     .into_any()
+}
+
+// ─── DOM helpers ─────────────────────────────────────────────────────────────
+
+fn focused_thumb_idx() -> Option<usize> {
+    let win = web_sys::window()?;
+    let doc = win.document()?;
+    let active = doc.active_element()?;
+    let val = active.get_attribute(THUMB_DATA_ATTR)?;
+    val.parse().ok()
+}
+
+fn focus_thumb(idx: usize) {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let Some(doc) = win.document() else {
+        return;
+    };
+    let selector = format!("[{THUMB_DATA_ATTR}=\"{idx}\"]");
+    if let Ok(Some(el)) = doc.query_selector(&selector) {
+        if let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>() {
+            let _ = html_el.focus();
+        }
+    }
+}
+
+fn blur_active() {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let Some(doc) = win.document() else {
+        return;
+    };
+    if let Some(active) = doc.active_element() {
+        if let Ok(html_el) = active.dyn_into::<web_sys::HtmlElement>() {
+            let _ = html_el.blur();
+        }
+    }
 }
 
 // ─── CageBand component ──────────────────────────────────────────────────────
@@ -320,8 +407,9 @@ pub fn CageBand(
     let ranked = RwSignal::new(Vec::<RankedTuple>::new());
     let selected_idx = RwSignal::new(None::<usize>);
     let scroll_offset = RwSignal::new(0_usize);
+    let visible_count = RwSignal::new(DEFAULT_VISIBLE_COUNT);
+    let strip_ref: NodeRef<leptos::html::Div> = NodeRef::new();
 
-    // Reload ranked tuples whenever the active cage changes.
     Effect::new(move |_| {
         let anchor = active_cage_anchor.get();
         ranked.set(vec![]);
@@ -336,62 +424,112 @@ pub fn CageBand(
         }
     });
 
+    let measure_strip = move || {
+        if let Some(el) = strip_ref.get_untracked() {
+            let count = fits_in_strip(el.client_height(), THUMB_STEP);
+            if count != visible_count.get_untracked() {
+                visible_count.set(count);
+            }
+        }
+    };
+    Effect::new(move |_| {
+        // Subscribe to ranked length so the strip is measured once it mounts.
+        let _ = ranked.with(Vec::len);
+        measure_strip();
+    });
+    window_event_listener(leptos::ev::resize, move |_| measure_strip());
+
+    Effect::new(move |_| {
+        let total = ranked.with(Vec::len);
+        let vis = visible_count.get();
+        let off = scroll_offset.get_untracked();
+        let max_off = max_scroll_offset(vis, total);
+        if off > max_off {
+            scroll_offset.set(max_off);
+        }
+    });
+
     let is_active = move || active_cage_anchor.get().is_some();
 
-    let can_scroll_up = move || scroll_offset.get() > 0;
+    let can_scroll_up = move || can_scroll_up_at(scroll_offset.get());
     let can_scroll_down = move || {
         let total = ranked.with(Vec::len);
-        scroll_offset.get() + VISIBLE_COUNT < total
+        can_scroll_down_at(scroll_offset.get(), visible_count.get(), total)
     };
 
-    let scroll_up = move || {
-        let off = scroll_offset.get();
-        if off > 0 {
+    let on_up = move |_| {
+        let off = scroll_offset.get_untracked();
+        if can_scroll_up_at(off) {
             scroll_offset.set(off - 1);
         }
     };
-
-    let scroll_down = move || {
-        if can_scroll_down() {
-            scroll_offset.set(scroll_offset.get() + 1);
+    let on_down = move |_| {
+        let off = scroll_offset.get_untracked();
+        let total = ranked.with_untracked(Vec::len);
+        let vis = visible_count.get_untracked();
+        if can_scroll_down_at(off, vis, total) {
+            scroll_offset.set(off + 1);
         }
     };
 
-    let on_up = move |_| scroll_up();
-    let on_down = move |_| scroll_down();
-
-    let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
-        let key = ev.key();
-        match key.as_str() {
-            "ArrowUp" => {
-                ev.prevent_default();
-                scroll_up();
-            }
-            "ArrowDown" => {
-                ev.prevent_default();
-                scroll_down();
-            }
-            "Escape" => {
-                ev.prevent_default();
-                selected_idx.set(None);
-            }
-            "Enter" => {
-                ev.prevent_default();
-                if let Some(idx) = selected_idx.get() {
-                    let anchor = active_cage_anchor.get_untracked();
-                    let tuple = ranked.with(|rs| rs.get(idx).map(|rt| rt.tuple.clone()));
-                    if let (Some(anchor), Some(tuple)) = (anchor, tuple) {
-                        spawn_local(async move {
-                            if let Some(view) = call_apply_narrowing(anchor, tuple).await {
-                                on_commit.run(view);
-                                selected_idx.set(None);
-                            }
-                        });
-                    }
+    let commit_selected = move || {
+        let Some(idx) = selected_idx.get_untracked() else {
+            return;
+        };
+        let anchor = active_cage_anchor.get_untracked();
+        let tuple = ranked.with_untracked(|rs| rs.get(idx).map(|rt| rt.tuple.clone()));
+        if let (Some(anchor), Some(tuple)) = (anchor, tuple) {
+            spawn_local(async move {
+                if let Some(view) = call_apply_narrowing(anchor, tuple).await {
+                    on_commit.run(view);
+                    selected_idx.set(None);
                 }
-            }
-            _ => {}
+            });
         }
+    };
+
+    let apply_arrow = move |target: Option<(usize, usize)>| {
+        let Some((new_i, new_scroll)) = target else {
+            return;
+        };
+        if new_scroll != scroll_offset.get_untracked() {
+            scroll_offset.set(new_scroll);
+        }
+        selected_idx.set(Some(new_i));
+        // The view closure rebuilds visible thumbnails synchronously when
+        // scroll_offset changes, so the new element exists by the time we
+        // ask the browser to focus it.
+        focus_thumb(new_i);
+    };
+
+    let on_keydown = move |ev: leptos::ev::KeyboardEvent| match ev.key().as_str() {
+        "ArrowUp" => {
+            let Some(i) = focused_thumb_idx() else { return };
+            ev.prevent_default();
+            apply_arrow(arrow_up_target(i, scroll_offset.get_untracked()));
+        }
+        "ArrowDown" => {
+            let Some(i) = focused_thumb_idx() else { return };
+            ev.prevent_default();
+            let total = ranked.with_untracked(Vec::len);
+            let vis = visible_count.get_untracked();
+            apply_arrow(arrow_down_target(
+                i,
+                scroll_offset.get_untracked(),
+                vis,
+                total,
+            ));
+        }
+        "Escape" => {
+            ev.prevent_default();
+            selected_idx.set(None);
+            blur_active();
+        }
+        "Enter" => {
+            ev.prevent_default();
+            commit_selected();
+        }
+        _ => {}
     };
 
     view! {
@@ -399,7 +537,6 @@ pub fn CageBand(
             class="cage-band"
             class:cage-band--active=is_active
             class:cage-band--collapsed=move || !is_active()
-            tabindex="0"
             on:keydown=on_keydown
         >
             {move || {
@@ -409,11 +546,12 @@ pub fn CageBand(
                 let rs = ranked.get();
                 let cells = active_cage_cells.get();
                 let off = scroll_offset.get();
+                let vis = visible_count.get();
                 let visible_items: Vec<_> = rs
                     .into_iter()
                     .enumerate()
                     .skip(off)
-                    .take(VISIBLE_COUNT)
+                    .take(vis)
                     .collect();
                 view! {
                     <button
@@ -424,7 +562,7 @@ pub fn CageBand(
                     >
                         "▲"
                     </button>
-                    <div class="cage-band__strip">
+                    <div class="cage-band__strip" node_ref=strip_ref>
                         <For
                             each=move || visible_items.clone()
                             key=|(i, _)| *i
@@ -432,15 +570,22 @@ pub fn CageBand(
                                 let cells_clone = cells.clone();
                                 let is_selected = move || selected_idx.get() == Some(i);
                                 view! {
-                                    <Thumbnail
-                                        rt=rt
-                                        active_cells=cells_clone
-                                        selected=Signal::derive(is_selected)
-                                        on_click=Callback::new(move |()| {
-                                            let prev = selected_idx.get_untracked();
-                                            selected_idx.set(if prev == Some(i) { None } else { Some(i) });
-                                        })
-                                    />
+                                    <div
+                                        class="cage-band__thumb"
+                                        class:cage-band__thumb--selected=is_selected
+                                        tabindex="0"
+                                        attr:data-thumb-idx=i.to_string()
+                                        on:focus=move |_| {
+                                            if selected_idx.get_untracked() != Some(i) {
+                                                selected_idx.set(Some(i));
+                                            }
+                                        }
+                                    >
+                                        <Thumbnail
+                                            rt=rt
+                                            active_cells=cells_clone
+                                        />
+                                    </div>
                                 }
                             }
                         />
@@ -464,5 +609,117 @@ mod tests {
     use super::*;
 
     const _: () = assert!(THUMB_STEP > THUMB_SIZE);
-    const _: () = assert!(VISIBLE_COUNT > 0);
+
+    #[test]
+    fn fits_in_strip_returns_one_for_zero_or_negative_height() {
+        assert_eq!(fits_in_strip(0, 100), 1);
+        assert_eq!(fits_in_strip(-5, 100), 1);
+    }
+
+    #[test]
+    fn fits_in_strip_returns_one_when_height_is_below_one_step() {
+        assert_eq!(fits_in_strip(1, 100), 1);
+        assert_eq!(fits_in_strip(99, 100), 1);
+    }
+
+    #[test]
+    fn fits_in_strip_returns_floor_of_height_over_step() {
+        assert_eq!(fits_in_strip(100, 100), 1);
+        assert_eq!(fits_in_strip(199, 100), 1);
+        assert_eq!(fits_in_strip(200, 100), 2);
+        assert_eq!(fits_in_strip(550, 100), 5);
+    }
+
+    #[test]
+    fn fits_in_strip_handles_zero_step_gracefully() {
+        assert_eq!(fits_in_strip(500, 0), 1);
+    }
+
+    #[test]
+    fn max_scroll_offset_is_total_minus_visible() {
+        assert_eq!(max_scroll_offset(3, 10), 7);
+        assert_eq!(max_scroll_offset(10, 10), 0);
+        assert_eq!(max_scroll_offset(20, 10), 0);
+        assert_eq!(max_scroll_offset(0, 0), 0);
+    }
+
+    #[test]
+    fn can_scroll_up_at_returns_true_only_when_offset_positive() {
+        assert!(!can_scroll_up_at(0));
+        assert!(can_scroll_up_at(1));
+        assert!(can_scroll_up_at(42));
+    }
+
+    #[test]
+    fn can_scroll_down_at_returns_false_when_everything_is_in_view() {
+        // 5 total, 5 visible from offset 0 — nothing more below.
+        assert!(!can_scroll_down_at(0, 5, 5));
+        // 5 total, 3 visible, offset 2 — last fits exactly.
+        assert!(!can_scroll_down_at(2, 3, 5));
+    }
+
+    #[test]
+    fn can_scroll_down_at_returns_true_when_more_below() {
+        assert!(can_scroll_down_at(0, 3, 10));
+        assert!(can_scroll_down_at(6, 3, 10));
+        assert!(!can_scroll_down_at(7, 3, 10));
+    }
+
+    #[test]
+    fn can_scroll_down_at_handles_empty_list() {
+        assert!(!can_scroll_down_at(0, 1, 0));
+    }
+
+    #[test]
+    fn arrow_up_target_at_zero_returns_none() {
+        assert_eq!(arrow_up_target(0, 0), None);
+    }
+
+    #[test]
+    fn arrow_up_target_decrements_focus_within_visible() {
+        // Focused at 3, scroll at 0 — moving up to 2 doesn't require scroll.
+        assert_eq!(arrow_up_target(3, 0), Some((2, 0)));
+        assert_eq!(arrow_up_target(7, 5), Some((6, 5)));
+    }
+
+    #[test]
+    fn arrow_up_target_scrolls_when_target_above_view() {
+        // Focused at 5, scroll at 5 — moving up needs scroll up by 1.
+        assert_eq!(arrow_up_target(5, 5), Some((4, 4)));
+        // Focused at 10, scroll at 8 — target 9 still in view.
+        assert_eq!(arrow_up_target(10, 8), Some((9, 8)));
+    }
+
+    #[test]
+    fn arrow_down_target_returns_none_when_at_last() {
+        assert_eq!(arrow_down_target(9, 0, 3, 10), None);
+    }
+
+    #[test]
+    fn arrow_down_target_returns_none_for_empty_list() {
+        assert_eq!(arrow_down_target(0, 0, 3, 0), None);
+    }
+
+    #[test]
+    fn arrow_down_target_increments_focus_within_visible() {
+        // Focus 0, visible [0..3) — moving to 1 stays in view.
+        assert_eq!(arrow_down_target(0, 0, 3, 10), Some((1, 0)));
+        // Focus 1, visible [0..3) — moving to 2 stays in view.
+        assert_eq!(arrow_down_target(1, 0, 3, 10), Some((2, 0)));
+    }
+
+    #[test]
+    fn arrow_down_target_scrolls_when_target_below_view() {
+        // Focus 2 at end of visible [0..3); pressing down needs to scroll.
+        // visible window must end at new_focused (3), so scroll = 3 + 1 - 3 = 1.
+        assert_eq!(arrow_down_target(2, 0, 3, 10), Some((3, 1)));
+        // Focus 5 with scroll 3, visible 3 — moving to 6 needs scroll to 4.
+        assert_eq!(arrow_down_target(5, 3, 3, 10), Some((6, 4)));
+    }
+
+    #[test]
+    fn arrow_down_target_does_not_scroll_past_end() {
+        // Focus 8 with scroll 6, visible 3; new_focused 9 is last; scroll stays.
+        assert_eq!(arrow_down_target(8, 6, 3, 10), Some((9, 7)));
+    }
 }

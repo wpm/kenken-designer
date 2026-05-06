@@ -10,7 +10,7 @@
   --flash-removed-color: var(--c-warning, #c0392b);
   --flash-added-glow: var(--c-accent, #1f77b4);
 
-  --cage-band-width: 128px;
+  --cage-band-width: 192px;
   --cage-band-gutter: calc(var(--cage-band-width) + 1rem);
 
   font-family: "Inter", system-ui, sans-serif;
@@ -89,11 +89,16 @@ a:hover {
   color: var(--paper-ink-2);
 }
 
+/* Grid + cage strip span the window's horizontal width (minus
+   .app-main padding); the grid fills its flex slot up to the
+   square-aspect cap, and the cage strip has fixed width on the right. */
 .grid-and-band {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
   gap: 1rem;
+  width: 100%;
+  justify-content: center;
 }
 
 .grid-svg {
@@ -141,6 +146,24 @@ a:hover {
   gap: 8px;
   overflow: hidden;
   align-items: center;
+  width: 100%;
+}
+
+.cage-band__thumb {
+  display: block;
+  flex-shrink: 0;
+  outline: none;
+  border-radius: 3px;
+  cursor: pointer;
+  /* 2.5px transparent ring leaves space for the focus/selected ring
+     so layout doesn't shift when state toggles. */
+  box-shadow: 0 0 0 2.5px transparent;
+  transition: box-shadow 80ms ease-in;
+}
+
+.cage-band__thumb:focus,
+.cage-band__thumb--selected {
+  box-shadow: 0 0 0 2.5px var(--paper-accent);
 }
 
 .cage-band__arrow {
