@@ -246,7 +246,7 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
     }
     match key {
         "Escape" => KeyAction::Escape,
-        "x" | "X" => KeyAction::Delete,
+        "Delete" => KeyAction::Delete,
         " " | "Spacebar" | "c" | "C" => KeyAction::Splinter,
         "m" | "M" => KeyAction::MoveCell,
         _ => KeyAction::Ignore,
@@ -901,11 +901,17 @@ fn handle_entry_key(
     }
 }
 
+struct EntryTarget {
+    initial: OperatorEntry,
+    anchor: (usize, usize),
+    single_cell: bool,
+}
+
 fn find_entry_target(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     drafts: RwSignal<Vec<DraftCage>>,
-) -> Option<(OperatorEntry, (usize, usize), bool)> {
+) -> Option<EntryTarget> {
     let committed = puzzle.with_untracked(|opt| {
         opt.as_ref().and_then(|v| {
             let (r, c) = cursor.get_untracked();
@@ -923,7 +929,11 @@ fn find_entry_target(
                         String::new()
                     },
                 };
-                (initial, anchor, single_cell)
+                EntryTarget {
+                    initial,
+                    anchor,
+                    single_cell,
+                }
             })
         })
     });
@@ -934,15 +944,15 @@ fn find_entry_target(
         ds.first()
             .map(|d| (cells_anchor(&d.cells), d.cells.len() == 1))
     })?;
-    Some((
-        OperatorEntry {
+    Some(EntryTarget {
+        initial: OperatorEntry {
             cage: ActiveCage::Draft,
             op: None,
             digits: String::new(),
         },
         anchor,
         single_cell,
-    ))
+    })
 }
 
 fn handle_enter_key(
@@ -952,10 +962,10 @@ fn handle_enter_key(
     entry: RwSignal<Option<OperatorEntry>>,
     ev: &KeyboardEvent,
 ) {
-    if let Some((initial, anchor, _)) = find_entry_target(puzzle, cursor, drafts) {
+    if let Some(t) = find_entry_target(puzzle, cursor, drafts) {
         ev.prevent_default();
-        cursor.set(anchor);
-        entry.set(Some(initial));
+        cursor.set(t.anchor);
+        entry.set(Some(t.initial));
     }
 }
 
@@ -969,16 +979,16 @@ fn try_enter_entry_with_key(
     if !is_entry_trigger_key(key) {
         return false;
     }
-    let Some((initial_entry, anchor, single_cell)) = find_entry_target(puzzle, cursor, drafts)
-    else {
+    let Some(t) = find_entry_target(puzzle, cursor, drafts) else {
         return false;
     };
-    match operator_step(initial_entry, key, single_cell) {
+    match operator_step(t.initial, key, t.single_cell) {
         Step::Update(new_entry) => {
-            cursor.set(anchor);
+            cursor.set(t.anchor);
             entry.set(Some(new_entry));
             true
         }
+        // Unreachable: trigger keys cannot produce Commit (requires Enter) or Cancel (requires Escape).
         Step::Commit { .. } | Step::Cancel => false,
     }
 }
@@ -1310,9 +1320,17 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_key_returns_delete_for_x() {
-        assert_eq!(dispatch_key("x", false, false, false), KeyAction::Delete);
-        assert_eq!(dispatch_key("X", false, false, false), KeyAction::Delete);
+    fn dispatch_key_returns_delete_for_delete_key() {
+        assert_eq!(
+            dispatch_key("Delete", false, false, false),
+            KeyAction::Delete
+        );
+    }
+
+    #[test]
+    fn dispatch_key_ignores_x_and_x() {
+        assert_eq!(dispatch_key("x", false, false, false), KeyAction::Ignore);
+        assert_eq!(dispatch_key("X", false, false, false), KeyAction::Ignore);
     }
 
     #[test]
@@ -1324,7 +1342,7 @@ mod tests {
 
     #[test]
     fn dispatch_key_ignores_modifier_plus_other_keys() {
-        // Cmd+x, Cmd+c, Cmd+Escape, Cmd+Space should not trigger cage edits.
+        // Cmd+c, Cmd+Escape, Cmd+Space should not trigger cage edits.
         assert_eq!(dispatch_key("x", false, true, false), KeyAction::Ignore);
         assert_eq!(dispatch_key("c", false, true, false), KeyAction::Ignore);
         assert_eq!(dispatch_key(" ", false, true, false), KeyAction::Ignore);
