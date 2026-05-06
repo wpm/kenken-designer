@@ -21,7 +21,7 @@ pub fn FlashOverlay(
         let gen = generation.get_untracked() + 1;
         generation.set(gen);
 
-        entries.set(flash_entries(&current_diff, cell_size, margin, n, font_size));
+        entries.set(flash_entries(&current_diff, cell_size, margin, n));
 
         let duration_ms = read_flash_duration_ms().unwrap_or(300.0_f64);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -41,14 +41,14 @@ pub fn FlashOverlay(
                 entries
                     .get()
                     .into_iter()
-                    .map(render_flash_entry)
+                    .map(|entry| render_flash_entry(entry, font_size))
                     .collect::<Vec<_>>()
             }}
         </g>
     }
 }
 
-fn render_flash_entry(entry: FlashEntry) -> impl IntoView {
+fn render_flash_entry(entry: FlashEntry, font_size: f64) -> impl IntoView {
     let class = if entry.removed {
         "flash-removed"
     } else {
@@ -60,7 +60,7 @@ fn render_flash_entry(entry: FlashEntry) -> impl IntoView {
             y=entry.y
             text-anchor="middle"
             dominant-baseline="central"
-            font-size=entry.font_size
+            font-size=font_size
             class=class
         >
             {entry.value.to_string()}
