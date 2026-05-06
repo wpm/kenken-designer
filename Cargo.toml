@@ -17,3 +17,4 @@ web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlE
 
 [workspace]
 members = ["src-tauri"]
+exclude = [".claude/worktrees/kenken"]
