@@ -104,6 +104,9 @@ a:hover {
 .size-control {
   font-family: "Inter", system-ui, sans-serif;
   color: var(--paper-ink);
+  /* Offset by the cage-band column (128px) + 1rem gap so the control
+     centers beneath the grid instead of beneath grid+band. */
+  margin-right: 144px;
 }
 
 /* ── Cage band ─────────────────────────────────────────────────── */
