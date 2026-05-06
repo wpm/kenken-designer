@@ -76,7 +76,7 @@ a:hover {
 .app-main {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   gap: 1.25rem;
   padding: 2rem 1.5rem;
@@ -86,17 +86,22 @@ a:hover {
   color: var(--paper-ink-2);
 }
 
+/* Grid + cage strip share the full horizontal width of the window
+   (minus .app-main padding). The grid fills its flex slot up to the
+   square-aspect cap; the cage strip has fixed width on the right. */
 .grid-and-band {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
   gap: 1rem;
+  width: 100%;
+  justify-content: center;
 }
 
 .grid-svg {
   display: block;
-  /* 144px = 128px cage-band width + 1rem gap; keep in sync with GRID_SIZE/cage-band width */
-  width: min(calc(100vw - 3rem - 144px), calc(100vh - 8.25rem));
+  /* 208px = 192px cage-band width + 1rem gap; keep in sync with cage-band width */
+  width: min(calc(100vw - 3rem - 208px), calc(100vh - 8.25rem));
   height: auto;
   aspect-ratio: 1 / 1;
 }
@@ -104,13 +109,17 @@ a:hover {
 .size-control {
   font-family: "Inter", system-ui, sans-serif;
   color: var(--paper-ink);
+  align-self: center;
 }
 
 /* ── Cage band ─────────────────────────────────────────────────── */
 
-/* Always reserves 128px wide so the layout doesn't shift when band appears/hides */
+/* Reserves a fixed 192px width (1.5× the prior 128px) so the layout
+   doesn't shift when the band appears/hides. Stretches vertically to
+   match the grid height so available thumbnail rows scale with the
+   viewport. */
 .cage-band {
-  width: 128px;
+  width: 192px;
   flex-shrink: 0;
   box-sizing: border-box;
   outline: none;
@@ -137,6 +146,24 @@ a:hover {
   gap: 8px;
   overflow: hidden;
   align-items: center;
+  width: 100%;
+}
+
+.cage-band__thumb {
+  display: block;
+  flex-shrink: 0;
+  outline: none;
+  border-radius: 3px;
+  cursor: pointer;
+  /* 2.5px transparent ring leaves space for the focus/selected ring
+     so layout doesn't shift when state toggles. */
+  box-shadow: 0 0 0 2.5px transparent;
+  transition: box-shadow 80ms ease-in;
+}
+
+.cage-band__thumb:focus,
+.cage-band__thumb--selected {
+  box-shadow: 0 0 0 2.5px var(--paper-accent);
 }
 
 .cage-band__arrow {
