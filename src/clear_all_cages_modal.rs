@@ -44,7 +44,6 @@ pub fn ClearAllCagesModal(
         <div
             style=overlay_style
             on:mousedown=move |ev: leptos::ev::MouseEvent| {
-                // Close when clicking the backdrop (not the dialog itself)
                 if ev.target() == ev.current_target() {
                     on_cancel.run(());
                 }
