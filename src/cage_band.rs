@@ -108,8 +108,8 @@ const fn can_scroll_down_at(offset: usize, visible: usize, total: usize) -> bool
     offset + visible < total
 }
 
-/// Compute the new (focused, scroll_offset) after pressing ArrowUp on the
-/// thumbnail at `focused`. Returns `None` if focus is already at the top.
+/// Compute the new (`focused`, `scroll_offset`) after pressing `ArrowUp` on
+/// the thumbnail at `focused`. Returns `None` if focus is already at the top.
 const fn arrow_up_target(focused: usize, scroll: usize) -> Option<(usize, usize)> {
     if focused == 0 {
         return None;
@@ -123,9 +123,9 @@ const fn arrow_up_target(focused: usize, scroll: usize) -> Option<(usize, usize)
     Some((new_focused, new_scroll))
 }
 
-/// Compute the new (focused, scroll_offset) after pressing ArrowDown on the
-/// thumbnail at `focused`. Returns `None` if focus is already at the last
-/// thumbnail (or the list is empty).
+/// Compute the new (`focused`, `scroll_offset`) after pressing `ArrowDown`
+/// on the thumbnail at `focused`. Returns `None` if focus is already at the
+/// last thumbnail (or the list is empty).
 const fn arrow_down_target(
     focused: usize,
     scroll: usize,
@@ -502,36 +502,34 @@ pub fn CageBand(
         focus_thumb(new_i);
     };
 
-    let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
-        match ev.key().as_str() {
-            "ArrowUp" => {
-                let Some(i) = focused_thumb_idx() else { return };
-                ev.prevent_default();
-                apply_arrow(arrow_up_target(i, scroll_offset.get_untracked()));
-            }
-            "ArrowDown" => {
-                let Some(i) = focused_thumb_idx() else { return };
-                ev.prevent_default();
-                let total = ranked.with_untracked(Vec::len);
-                let vis = visible_count.get_untracked();
-                apply_arrow(arrow_down_target(
-                    i,
-                    scroll_offset.get_untracked(),
-                    vis,
-                    total,
-                ));
-            }
-            "Escape" => {
-                ev.prevent_default();
-                selected_idx.set(None);
-                blur_active();
-            }
-            "Enter" => {
-                ev.prevent_default();
-                commit_selected();
-            }
-            _ => {}
+    let on_keydown = move |ev: leptos::ev::KeyboardEvent| match ev.key().as_str() {
+        "ArrowUp" => {
+            let Some(i) = focused_thumb_idx() else { return };
+            ev.prevent_default();
+            apply_arrow(arrow_up_target(i, scroll_offset.get_untracked()));
         }
+        "ArrowDown" => {
+            let Some(i) = focused_thumb_idx() else { return };
+            ev.prevent_default();
+            let total = ranked.with_untracked(Vec::len);
+            let vis = visible_count.get_untracked();
+            apply_arrow(arrow_down_target(
+                i,
+                scroll_offset.get_untracked(),
+                vis,
+                total,
+            ));
+        }
+        "Escape" => {
+            ev.prevent_default();
+            selected_idx.set(None);
+            blur_active();
+        }
+        "Enter" => {
+            ev.prevent_default();
+            commit_selected();
+        }
+        _ => {}
     };
 
     view! {
