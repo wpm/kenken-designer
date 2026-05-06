@@ -26,6 +26,15 @@ pub enum OpKind {
     Given,
 }
 
+/// One ranked tuple entry returned by the `rank_active_cage` command.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct RankedTupleView {
+    pub tuple: Vec<u32>,
+    pub view: PuzzleView,
+    pub total_reduction: usize,
+    pub newly_singleton: usize,
+}
+
 /// A cage whose shape is built but whose operation is not yet set.
 ///
 /// Returned from shape-editing commands when the previous cage's operation is no longer

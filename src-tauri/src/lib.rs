@@ -6,14 +6,14 @@ mod view;
 
 use std::sync::Mutex;
 
-use kenken::Puzzle;
+use kenken::{Delta, Puzzle, Values};
 use tauri::menu::{
     AboutMetadata, IsMenuItem, Menu, MenuEvent, MenuItemBuilder, PredefinedMenuItem, Submenu,
 };
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use session::Session;
-use view::{DraftCage, EditResult, OpKind, PuzzleView};
+use view::{DraftCage, EditResult, OpKind, PuzzleView, RankedTupleView};
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
@@ -223,6 +223,62 @@ fn legal_move_targets(
     Ok(cage_edit::legal_move_targets(session.current(), cell))
 }
 
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn rank_active_cage(
+    anchor: (usize, usize),
+    state: State<Mutex<Session>>,
+) -> Result<Vec<RankedTupleView>, String> {
+    let (puzzle, cage) = {
+        let session = state.lock().map_err(|e| format!("{e:?}"))?;
+        let puzzle = session.current().clone();
+        let cage = cage_edit::cage_at_or_err(&puzzle, anchor)?.clone();
+        (puzzle, cage)
+    };
+    let ranked = puzzle
+        .rank_tuples_for_cage(&cage)
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(ranked
+        .into_iter()
+        .map(|(tuple, narrowed, score)| RankedTupleView {
+            tuple: tuple.into_iter().map(u32::from).collect(),
+            view: PuzzleView::from(&narrowed),
+            total_reduction: score.total_reduction,
+            newly_singleton: score.newly_singleton,
+        })
+        .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn apply_narrowing(
+    anchor: (usize, usize),
+    tuple: Vec<u32>,
+    state: State<Mutex<Session>>,
+) -> Result<PuzzleView, String> {
+    let (puzzle, cells) = {
+        let session = state.lock().map_err(|e| format!("{e:?}"))?;
+        let puzzle = session.current().clone();
+        let cells = cage_edit::cage_at_or_err(&puzzle, anchor)?
+            .cells()
+            .to_vec();
+        (puzzle, cells)
+    };
+    if cells.len() != tuple.len() {
+        return Err(format!(
+            "tuple length {} does not match cage size {}",
+            tuple.len(),
+            cells.len()
+        ));
+    }
+    let mut delta = Delta::identity(puzzle.n()).map_err(|e| format!("{e:?}"))?;
+    for (cell, v) in cells.iter().zip(tuple.iter()) {
+        let val = u8::try_from(*v).map_err(|e| format!("value out of range: {e}"))?;
+        delta = delta.set(*cell, Values::new([val]));
+    }
+    Ok(PuzzleView::from(&puzzle.narrow(&delta)))
+}
+
 #[allow(clippy::too_many_lines)] // Per-OS submenu construction is the long part
 fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let pkg_info = app.package_info();
@@ -415,6 +471,8 @@ pub fn run() {
             move_cell,
             legal_move_targets,
             clear_all_cages,
+            rank_active_cage,
+            apply_narrowing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1135,5 +1193,100 @@ mod tests {
         );
         let has_removed = view.diff.changes.iter().any(|cd| !cd.removed.is_empty());
         assert!(has_removed, "redo diff should contain removed candidates");
+    }
+
+    #[test]
+    fn rank_active_cage_returns_ranked_tuples_for_caged_cell() {
+        let app = empty_session_app(3);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let ranked = rank_active_cage((0, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(!ranked.is_empty(), "should return at least one tuple");
+        for rt in &ranked {
+            assert_eq!(
+                rt.tuple.len(),
+                2,
+                "each tuple should match cage size of 2"
+            );
+            assert_eq!(rt.view.n, 3, "narrowed view should have correct grid size");
+        }
+    }
+
+    #[test]
+    fn rank_active_cage_returns_err_when_no_cage_at_anchor() {
+        let app = empty_session_app(3);
+        assert!(rank_active_cage((0, 0), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn rank_active_cage_tuples_are_sorted_by_reduction_descending() {
+        let app = empty_session_app(3);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let ranked = rank_active_cage((0, 0), app.state::<Mutex<Session>>()).unwrap();
+        let reductions: Vec<usize> = ranked.iter().map(|rt| rt.total_reduction).collect();
+        let mut sorted = reductions.clone();
+        sorted.sort_unstable_by(|a, b| b.cmp(a));
+        assert_eq!(reductions, sorted, "tuples should be sorted by reduction descending");
+    }
+
+    #[test]
+    fn apply_narrowing_pins_cage_cells_and_narrows() {
+        let app = empty_session_app(3);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let ranked = rank_active_cage((0, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(!ranked.is_empty());
+        let first_tuple = ranked[0].tuple.clone();
+
+        let view = apply_narrowing((0, 0), first_tuple.clone(), app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.n, 3);
+        assert_eq!(
+            view.cells[0][0],
+            vec![first_tuple[0] as u8],
+            "first cage cell should be pinned to tuple value"
+        );
+        assert_eq!(
+            view.cells[0][1],
+            vec![first_tuple[1] as u8],
+            "second cage cell should be pinned to tuple value"
+        );
+    }
+
+    #[test]
+    fn apply_narrowing_returns_err_when_no_cage_at_anchor() {
+        let app = empty_session_app(3);
+        assert!(apply_narrowing((0, 0), vec![1, 2], app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn apply_narrowing_returns_err_when_tuple_length_mismatches_cage() {
+        let app = empty_session_app(3);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        assert!(apply_narrowing((0, 0), vec![1], app.state::<Mutex<Session>>()).is_err());
     }
 }
