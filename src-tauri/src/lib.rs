@@ -44,18 +44,20 @@ fn apply_undo(state: &Mutex<Session>) -> Result<PuzzleView, String> {
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
     let pre = session.current().clone();
     session.undo();
-    let post = session.current();
-    let d = same_size_diff(&pre, post);
-    Ok(PuzzleView::from(post).with_diff(d))
+    let post = session.current().clone();
+    drop(session);
+    let d = same_size_diff(&pre, &post);
+    Ok(PuzzleView::from(&post).with_diff(d))
 }
 
 fn apply_redo(state: &Mutex<Session>) -> Result<PuzzleView, String> {
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
     let pre = session.current().clone();
     session.redo();
-    let post = session.current();
-    let d = same_size_diff(&pre, post);
-    Ok(PuzzleView::from(post).with_diff(d))
+    let post = session.current().clone();
+    drop(session);
+    let d = same_size_diff(&pre, &post);
+    Ok(PuzzleView::from(&post).with_diff(d))
 }
 
 fn same_size_diff(pre: &Puzzle, post: &Puzzle) -> diff::PuzzleDiff {
