@@ -10,7 +10,6 @@ const MARGIN: f64 = 14.0;
 const OUTER_STROKE: f64 = 2.6;
 const THICK_STROKE: f64 = 2.2;
 const THIN_STROKE: f64 = 0.5;
-const OP_HALO_STROKE: f64 = 2.5;
 const OP_INSET: f64 = 4.0;
 pub const UNCAGED_FILL: &str = "#fefcf7";
 const ACTIVE_FILL_OPACITY: &str = "0.16";
@@ -42,11 +41,11 @@ impl Layout {
     }
 
     fn sub_w(&self) -> f64 {
-        self.cell / usize_to_f64(self.cols())
+        self.inner_extent() / usize_to_f64(self.cols())
     }
 
     fn sub_h(&self) -> f64 {
-        self.cell / usize_to_f64(self.rows())
+        self.inner_extent() / usize_to_f64(self.rows())
     }
 
     fn candidate_font(&self) -> f64 {
@@ -59,6 +58,25 @@ impl Layout {
 
     fn op_font(&self) -> f64 {
         (self.cell * 0.16).max(10.0)
+    }
+
+    /// Buffer reserved on every inner edge of a cell so the top-left operator
+    /// label has its own space and never overlaps candidate "fill" digits.
+    fn digit_inset(&self) -> f64 {
+        OP_INSET + self.op_font() + 2.0
+    }
+
+    /// Side length of the cell's inner area — the cell minus a `digit_inset`
+    /// buffer on each edge — into which candidate digits are laid out.
+    fn inner_extent(&self) -> f64 {
+        2.0_f64.mul_add(-self.digit_inset(), self.cell).max(0.0)
+    }
+
+    /// Center of the full cell, used for the singleton (final-answer) digit.
+    /// Spans the whole cell rather than the inner area so the answer is
+    /// visually centered regardless of the operator buffer.
+    const fn singleton_center(&self, cell_x: f64, cell_y: f64) -> (f64, f64) {
+        (cell_x + self.cell / 2.0, cell_y + self.cell / 2.0)
     }
 
     const fn origin(&self, r: usize, c: usize) -> (f64, f64) {
@@ -180,6 +198,7 @@ pub fn Grid(
                 cell_size=layout.cell
                 margin=MARGIN
                 n=n
+                digit_inset=layout.digit_inset()
                 font_size=layout.candidate_font()
             />
         </svg>
@@ -290,6 +309,7 @@ fn render_texts(
     let cols = layout.cols();
     let sub_w = layout.sub_w();
     let sub_h = layout.sub_h();
+    let inset = layout.digit_inset();
     let grid: Vec<Vec<Vec<u8>>> = view.cells.clone();
     let layout = *layout;
 
@@ -311,14 +331,14 @@ fn render_texts(
                 };
                 for &v in candidates {
                     let (cx, cy) = if singleton {
-                        (cell_x + layout.cell / 2.0, cell_y + layout.cell / 2.0)
+                        layout.singleton_center(cell_x, cell_y)
                     } else {
                         let idx = usize::from(v.saturating_sub(1));
                         let sub_r = idx / cols;
                         let sub_c = idx % cols;
                         (
-                            usize_to_f64(sub_c).mul_add(sub_w, cell_x) + sub_w / 2.0,
-                            usize_to_f64(sub_r).mul_add(sub_h, cell_y) + sub_h / 2.0,
+                            usize_to_f64(sub_c).mul_add(sub_w, cell_x + inset) + sub_w / 2.0,
+                            usize_to_f64(sub_r).mul_add(sub_h, cell_y + inset) + sub_h / 2.0,
                         )
                     };
                     out.push(view! {
@@ -445,10 +465,6 @@ fn render_op_labels(
                     font-size=op_font
                     font-weight="700"
                     fill=INK
-                    stroke="white"
-                    stroke-width=OP_HALO_STROKE
-                    stroke-linejoin="round"
-                    paint-order="stroke"
                 >
                     {label}
                 </text>
@@ -591,5 +607,80 @@ mod tests {
     #[test]
     fn op_label_given_is_just_number() {
         assert_eq!(op_label(OpKind::Given, 7), "7");
+    }
+
+    use crate::app::GRID_SIZE;
+
+    #[test]
+    fn digit_inset_clears_operator_font() {
+        for n in [4_usize, 6, 9] {
+            let layout = Layout::new(n, GRID_SIZE);
+            assert!(
+                layout.digit_inset() >= OP_INSET + layout.op_font(),
+                "n={n}: digit_inset={} should clear OP_INSET + op_font={}",
+                layout.digit_inset(),
+                OP_INSET + layout.op_font(),
+            );
+        }
+    }
+
+    #[test]
+    fn top_left_candidate_sits_below_operator_buffer() {
+        for n in [4_usize, 6, 9] {
+            let layout = Layout::new(n, GRID_SIZE);
+            let (_cell_x, cell_y) = layout.origin(0, 0);
+            let inset = layout.digit_inset();
+            let sub_h = layout.sub_h();
+            let cy = cell_y + inset + sub_h / 2.0;
+            let half_font = layout.candidate_font() / 2.0;
+            assert!(
+                cy - half_font >= cell_y + inset - 0.001,
+                "n={n}: top-left candidate top={} must be at or below buffer bottom={}",
+                cy - half_font,
+                cell_y + inset,
+            );
+            assert!(
+                cell_y + inset >= cell_y + OP_INSET + layout.op_font(),
+                "n={n}: buffer must clear the operator label",
+            );
+        }
+    }
+
+    #[test]
+    fn singleton_sits_at_geometric_center_of_cell() {
+        // Pins the invariant that the singleton (final-answer) digit is
+        // placed at the cell's geometric center — equidistant from all four
+        // cell edges — and is therefore unaffected by `digit_inset`.
+        let layout = Layout::new(6, GRID_SIZE);
+        let (cell_x, cell_y) = layout.origin(2, 3);
+        let (cx, cy) = layout.singleton_center(cell_x, cell_y);
+        let left = cx - cell_x;
+        let right = (cell_x + layout.cell) - cx;
+        let top = cy - cell_y;
+        let bottom = (cell_y + layout.cell) - cy;
+        assert!(
+            (left - right).abs() < 1e-9,
+            "singleton not horizontally centered: left={left}, right={right}",
+        );
+        assert!(
+            (top - bottom).abs() < 1e-9,
+            "singleton not vertically centered: top={top}, bottom={bottom}",
+        );
+        assert!(
+            left > layout.digit_inset(),
+            "singleton's gap to cell edge ({left}) should exceed digit_inset \
+             ({}) — i.e. singleton spans the full cell, not just the inner area",
+            layout.digit_inset(),
+        );
+    }
+
+    #[test]
+    fn sub_dimensions_use_inner_area() {
+        let layout = Layout::new(6, GRID_SIZE);
+        let inner = 2.0_f64.mul_add(-layout.digit_inset(), layout.cell).max(0.0);
+        let expected_sub_w = inner / usize_to_f64(layout.cols());
+        let expected_sub_h = inner / usize_to_f64(layout.rows());
+        assert!((layout.sub_w() - expected_sub_w).abs() < 1e-9);
+        assert!((layout.sub_h() - expected_sub_h).abs() < 1e-9);
     }
 }
