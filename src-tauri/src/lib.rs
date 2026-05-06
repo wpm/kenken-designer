@@ -282,13 +282,13 @@ fn apply_narrowing(
 fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let pkg_info = app.package_info();
     let config = app.config();
-    let banner = Image::from_bytes(include_bytes!("../assets/banner.png"))?;
+    let icon = Image::from_bytes(include_bytes!("../icons/128x128.png"))?;
     let about_metadata = AboutMetadata {
         name: None,
         version: Some(pkg_info.version.to_string()),
         copyright: config.bundle.copyright.clone(),
         authors: config.bundle.publisher.clone().map(|p| vec![p]),
-        icon: Some(banner),
+        icon: Some(icon),
         ..Default::default()
     };
 
