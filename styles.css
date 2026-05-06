@@ -108,9 +108,7 @@ a:hover {
 }
 
 .cage-band--collapsed {
-  height: 4px;
-  background: var(--paper-line);
-  border-radius: 2px;
+  height: 140px;
 }
 
 .cage-band--active {
