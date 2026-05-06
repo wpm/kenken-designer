@@ -190,6 +190,7 @@ pub fn Grid(
                 margin=MARGIN
                 n=n
                 digit_inset=layout.digit_inset()
+                font_size=layout.candidate_font()
             />
         </svg>
     }

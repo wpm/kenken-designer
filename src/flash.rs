@@ -8,6 +8,7 @@ pub fn FlashOverlay(
     margin: f64,
     n: usize,
     digit_inset: f64,
+    font_size: f64,
 ) -> impl IntoView {
     let entries: RwSignal<Vec<FlashEntry>> = RwSignal::new(vec![]);
     let generation: RwSignal<u64> = RwSignal::new(0);
@@ -47,14 +48,14 @@ pub fn FlashOverlay(
                 entries
                     .get()
                     .into_iter()
-                    .map(render_flash_entry)
+                    .map(|entry| render_flash_entry(entry, font_size))
                     .collect::<Vec<_>>()
             }}
         </g>
     }
 }
 
-fn render_flash_entry(entry: FlashEntry) -> impl IntoView {
+fn render_flash_entry(entry: FlashEntry, font_size: f64) -> impl IntoView {
     let class = if entry.removed {
         "flash-removed"
     } else {
@@ -66,6 +67,7 @@ fn render_flash_entry(entry: FlashEntry) -> impl IntoView {
             y=entry.y
             text-anchor="middle"
             dominant-baseline="central"
+            font-size=font_size
             class=class
         >
             {entry.value.to_string()}
