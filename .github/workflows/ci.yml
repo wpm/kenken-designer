@@ -35,16 +35,30 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src-tauri -> target
+
+      - name: Keep downloaded apt packages
+        run: |
+          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
+            | sudo tee /etc/apt/apt.conf.d/99keep-debs > /dev/null
 
       - name: Cache apt packages
+        id: apt-cache
         uses: actions/cache@v5
         with:
-          path: /var/cache/apt/archives
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
           key: apt-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
+            sudo apt-get update
+          fi
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Format
@@ -131,18 +145,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.os }}
+          workspaces: |
+            . -> target
+            src-tauri -> target
+
+      - name: Keep downloaded apt packages
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
+            | sudo tee /etc/apt/apt.conf.d/99keep-debs > /dev/null
 
       - name: Cache apt packages
         if: matrix.os == 'ubuntu-latest'
+        id: apt-cache
         uses: actions/cache@v5
         with:
-          path: /var/cache/apt/archives
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
           key: apt-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
 
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo apt-get update
+          if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
+            sudo apt-get update
+          fi
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Build (frontend wasm)
