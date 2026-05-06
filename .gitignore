@@ -3,6 +3,6 @@
 /Cargo.lock
 /.claude
 /node_modules/
-/public/tailwind-out.css
+/tailwind-out.css
 /package-lock.json
 

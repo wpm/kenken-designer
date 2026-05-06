@@ -1,16 +1,10 @@
 {
-  "name": "add-tailwind",
-  "version": "1.0.0",
-  "description": "[![CI](https://github.com/wpm/kenken-designer/actions/workflows/ci.yml/badge.svg)](https://github.com/wpm/kenken-designer/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/wpm/kenken-designer/branch/main/graph/badge.svg)](https://codecov.io/gh/wpm/kenken-designer)",
-  "main": "index.js",
+  "name": "kenken-designer",
+  "private": true,
   "scripts": {
-    "tw:build": "tailwindcss -i tailwind.css -o public/tailwind-out.css",
-    "tw:watch": "tailwindcss -i tailwind.css -o public/tailwind-out.css --watch"
+    "tw:build": "tailwindcss -i tailwind.css -o tailwind-out.css",
+    "tw:watch": "tailwindcss -i tailwind.css -o tailwind-out.css --watch"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "devDependencies": {
     "@tailwindcss/cli": "^4.2.4",
     "tailwindcss": "^4.2.4"
