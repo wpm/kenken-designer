@@ -3,6 +3,7 @@ mod cage_band;
 mod cage_colors;
 mod cage_edit;
 mod cage_index;
+mod clear_all_cages_modal;
 mod context_menu;
 mod context_menu_view;
 mod diff;
