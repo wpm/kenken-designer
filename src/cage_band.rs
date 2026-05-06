@@ -422,7 +422,7 @@ pub fn CageBand(
                         on:click=on_up
                         aria-label="Scroll up"
                     >
-                        "˄"
+                        "▲"
                     </button>
                     <div class="cage-band__strip">
                         <For
@@ -451,7 +451,7 @@ pub fn CageBand(
                         on:click=on_down
                         aria-label="Scroll down"
                     >
-                        "˅"
+                        "▼"
                     </button>
                 }.into_any()
             }}
