@@ -54,8 +54,8 @@ async fn call_apply_narrowing(anchor: (usize, usize), tuple: Vec<u32>) -> Option
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 
-/// Side length of each thumbnail (square). 1.5× the previous 112px to match
-/// the wider strip — visually larger thumbnails are easier to read.
+/// Side length of each thumbnail (square). Sized to match the strip width
+/// (192px) minus the strip's horizontal padding so thumbnails fill the band.
 const THUMB_SIZE: u32 = 168;
 /// Gap between thumbnails.
 const THUMB_GAP: u32 = 8;
@@ -410,7 +410,6 @@ pub fn CageBand(
     let visible_count = RwSignal::new(DEFAULT_VISIBLE_COUNT);
     let strip_ref: NodeRef<leptos::html::Div> = NodeRef::new();
 
-    // Reload ranked tuples whenever the active cage changes.
     Effect::new(move |_| {
         let anchor = active_cage_anchor.get();
         ranked.set(vec![]);
@@ -425,26 +424,21 @@ pub fn CageBand(
         }
     });
 
-    // Measure the strip element to determine how many thumbnails fit.
-    // Re-runs whenever the rendered ranked list changes (so the strip
-    // exists) and on window resize.
     let measure_strip = move || {
         if let Some(el) = strip_ref.get_untracked() {
-            let h = el.client_height();
-            let count = fits_in_strip(h, THUMB_STEP);
+            let count = fits_in_strip(el.client_height(), THUMB_STEP);
             if count != visible_count.get_untracked() {
                 visible_count.set(count);
             }
         }
     };
     Effect::new(move |_| {
-        // Re-measure when the strip first appears (ranked goes from empty to populated).
+        // Subscribe to ranked length so the strip is measured once it mounts.
         let _ = ranked.with(Vec::len);
         measure_strip();
     });
     window_event_listener(leptos::ev::resize, move |_| measure_strip());
 
-    // Clamp scroll_offset whenever total or visible_count shrinks/grows.
     Effect::new(move |_| {
         let total = ranked.with(Vec::len);
         let vis = visible_count.get();
@@ -452,21 +446,6 @@ pub fn CageBand(
         let max_off = max_scroll_offset(vis, total);
         if off > max_off {
             scroll_offset.set(max_off);
-        }
-    });
-
-    // After selected_idx changes (e.g. via arrow keys), restore DOM focus to
-    // the corresponding thumbnail. Reads scroll_offset so a focus that
-    // accompanies a scroll is reapplied after the new thumbnail is in DOM.
-    Effect::new(move |_| {
-        let cur = selected_idx.get();
-        let _ = scroll_offset.get();
-        if let Some(idx) = cur {
-            // Only refocus when the active element isn't already the target,
-            // otherwise the redundant call can interfere with click/blur ordering.
-            if focused_thumb_idx() != Some(idx) {
-                focus_thumb(idx);
-            }
         }
     });
 
@@ -509,31 +488,38 @@ pub fn CageBand(
         }
     };
 
+    let apply_arrow = move |target: Option<(usize, usize)>| {
+        let Some((new_i, new_scroll)) = target else {
+            return;
+        };
+        if new_scroll != scroll_offset.get_untracked() {
+            scroll_offset.set(new_scroll);
+        }
+        selected_idx.set(Some(new_i));
+        // The view closure rebuilds visible thumbnails synchronously when
+        // scroll_offset changes, so the new element exists by the time we
+        // ask the browser to focus it.
+        focus_thumb(new_i);
+    };
+
     let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
         match ev.key().as_str() {
             "ArrowUp" => {
                 let Some(i) = focused_thumb_idx() else { return };
                 ev.prevent_default();
-                let cur_scroll = scroll_offset.get_untracked();
-                if let Some((new_i, new_scroll)) = arrow_up_target(i, cur_scroll) {
-                    if new_scroll != cur_scroll {
-                        scroll_offset.set(new_scroll);
-                    }
-                    selected_idx.set(Some(new_i));
-                }
+                apply_arrow(arrow_up_target(i, scroll_offset.get_untracked()));
             }
             "ArrowDown" => {
                 let Some(i) = focused_thumb_idx() else { return };
                 ev.prevent_default();
-                let cur_scroll = scroll_offset.get_untracked();
                 let total = ranked.with_untracked(Vec::len);
                 let vis = visible_count.get_untracked();
-                if let Some((new_i, new_scroll)) = arrow_down_target(i, cur_scroll, vis, total) {
-                    if new_scroll != cur_scroll {
-                        scroll_offset.set(new_scroll);
-                    }
-                    selected_idx.set(Some(new_i));
-                }
+                apply_arrow(arrow_down_target(
+                    i,
+                    scroll_offset.get_untracked(),
+                    vis,
+                    total,
+                ));
             }
             "Escape" => {
                 ev.prevent_default();
@@ -593,11 +579,6 @@ pub fn CageBand(
                                         attr:data-thumb-idx=i.to_string()
                                         on:focus=move |_| {
                                             if selected_idx.get_untracked() != Some(i) {
-                                                selected_idx.set(Some(i));
-                                            }
-                                        }
-                                        on:mousedown=move |ev: leptos::ev::MouseEvent| {
-                                            if ev.button() == 0 {
                                                 selected_idx.set(Some(i));
                                             }
                                         }
