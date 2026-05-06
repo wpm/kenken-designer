@@ -1,10 +1,13 @@
 use kenken::{Operation, Puzzle};
 
+use crate::diff::PuzzleDiff;
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct PuzzleView {
     pub n: usize,
     pub cells: Vec<Vec<Vec<u8>>>,
     pub cages: Vec<CageView>,
+    pub diff: PuzzleDiff,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -71,7 +74,19 @@ impl From<&Puzzle> for PuzzleView {
             .collect();
         cages.sort_unstable_by_key(|c| c.cells.first().copied());
 
-        Self { n, cells, cages }
+        Self {
+            n,
+            cells,
+            cages,
+            diff: PuzzleDiff::default(),
+        }
+    }
+}
+
+impl PuzzleView {
+    pub fn with_diff(mut self, diff: PuzzleDiff) -> Self {
+        self.diff = diff;
+        self
     }
 }
 

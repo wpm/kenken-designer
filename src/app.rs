@@ -99,6 +99,7 @@ pub struct PuzzleView {
     pub n: usize,
     pub cells: Vec<Vec<Vec<u8>>>,
     pub cages: Vec<CageView>,
+    pub diff: crate::diff::PuzzleDiff,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -142,10 +143,14 @@ pub async fn call_edit<A: Serialize>(cmd: &str, args: A) -> Option<EditResult> {
     serde_wasm_bindgen::from_value(value).ok()
 }
 
-fn listen_for_puzzle_updates(set_puzzle: WriteSignal<Option<PuzzleView>>) {
+fn listen_for_puzzle_updates(
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
+) {
     let cb = Closure::<dyn FnMut(JsValue)>::new(move |event: JsValue| {
         if let Ok(payload) = js_sys::Reflect::get(&event, &JsValue::from_str("payload")) {
             if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(payload) {
+                set_flash_diff.set(view.diff.clone());
                 set_puzzle.set(Some(view));
             }
         }
@@ -243,6 +248,8 @@ pub struct ContextMenuState {
 #[allow(clippy::too_many_lines)]
 pub fn App() -> impl IntoView {
     let (puzzle, set_puzzle) = signal::<Option<PuzzleView>>(None);
+    let (flash_diff, set_flash_diff) =
+        signal::<crate::diff::PuzzleDiff>(crate::diff::PuzzleDiff::default());
     let cursor = RwSignal::new((0_usize, 0_usize));
     let active_cage = RwSignal::new(None::<usize>);
     let drafts = RwSignal::new(Vec::<DraftCage>::new());
@@ -250,9 +257,13 @@ pub fn App() -> impl IntoView {
     let context_menu = RwSignal::new(None::<ContextMenuState>);
     let current_path = RwSignal::new(None::<String>);
 
-    refresh_from(set_puzzle, Box::pin(call("get_state", NoArgs {})));
-    listen_for_puzzle_updates(set_puzzle);
-    listen_for_file_actions(set_puzzle, current_path);
+    refresh_from(
+        set_puzzle,
+        set_flash_diff,
+        Box::pin(call("get_state", NoArgs {})),
+    );
+    listen_for_puzzle_updates(set_puzzle, set_flash_diff);
+    listen_for_file_actions(set_puzzle, set_flash_diff, current_path);
 
     let on_size_change = move |ev: Event| {
         let Ok(n) = event_target_value(&ev).parse::<usize>() else {
@@ -264,6 +275,7 @@ pub fn App() -> impl IntoView {
         context_menu.set(None);
         refresh_from(
             set_puzzle,
+            set_flash_diff,
             Box::pin(call("new_puzzle", NewPuzzleArgs { n })),
         );
     };
@@ -326,6 +338,7 @@ pub fn App() -> impl IntoView {
     install_keydown_handler(
         puzzle,
         set_puzzle,
+        set_flash_diff,
         cursor,
         active_cage,
         drafts,
@@ -355,6 +368,7 @@ pub fn App() -> impl IntoView {
     });
 
     let on_band_commit = Callback::new(move |view: PuzzleView| {
+        set_flash_diff.set(view.diff.clone());
         set_puzzle.set(Some(view));
     });
 
@@ -378,6 +392,7 @@ pub fn App() -> impl IntoView {
                         on_cell_click=on_cell_click
                         on_cell_right_click=on_cell_right_click
                         entry=entry.into()
+                        flash_diff=flash_diff
                     />
                 })
             }}
@@ -387,6 +402,7 @@ pub fn App() -> impl IntoView {
                         state=state
                         puzzle=puzzle
                         set_puzzle=set_puzzle
+                        set_flash_diff=set_flash_diff
                         drafts=drafts
                         active_cage=active_cage
                         cursor=cursor
@@ -418,6 +434,7 @@ pub fn App() -> impl IntoView {
 fn install_keydown_handler(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,
     drafts: RwSignal<Vec<DraftCage>>,
@@ -428,7 +445,15 @@ fn install_keydown_handler(
     window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
         if let Some(current_entry) = entry.get_untracked() {
             ev.prevent_default();
-            handle_entry_key(puzzle, set_puzzle, drafts, entry, current_entry, &ev.key());
+            handle_entry_key(
+                puzzle,
+                set_puzzle,
+                set_flash_diff,
+                drafts,
+                entry,
+                current_entry,
+                &ev.key(),
+            );
             return;
         }
 
@@ -451,15 +476,25 @@ fn install_keydown_handler(
             KeyAction::Ignore => {}
             KeyAction::Undo => {
                 ev.prevent_default();
-                refresh_from_then(set_puzzle, Box::pin(call("undo", NoArgs {})), move || {
-                    set_drafts_if_changed(drafts, vec![]);
-                });
+                refresh_from_then(
+                    set_puzzle,
+                    set_flash_diff,
+                    Box::pin(call("undo", NoArgs {})),
+                    move || {
+                        set_drafts_if_changed(drafts, vec![]);
+                    },
+                );
             }
             KeyAction::Redo => {
                 ev.prevent_default();
-                refresh_from_then(set_puzzle, Box::pin(call("redo", NoArgs {})), move || {
-                    set_drafts_if_changed(drafts, vec![]);
-                });
+                refresh_from_then(
+                    set_puzzle,
+                    set_flash_diff,
+                    Box::pin(call("redo", NoArgs {})),
+                    move || {
+                        set_drafts_if_changed(drafts, vec![]);
+                    },
+                );
             }
             KeyAction::Save => {
                 ev.prevent_default();
@@ -471,7 +506,7 @@ fn install_keydown_handler(
             }
             KeyAction::Open => {
                 ev.prevent_default();
-                handle_open(set_puzzle, current_path);
+                handle_open(set_puzzle, set_flash_diff, current_path);
             }
             KeyAction::Navigate(nav_key) => {
                 ev.prevent_default();
@@ -479,19 +514,51 @@ fn install_keydown_handler(
             }
             KeyAction::ShiftArrow(nav_key) => {
                 ev.prevent_default();
-                handle_shift_arrow(puzzle, set_puzzle, cursor, active_cage, drafts, nav_key);
+                handle_shift_arrow(
+                    puzzle,
+                    set_puzzle,
+                    set_flash_diff,
+                    cursor,
+                    active_cage,
+                    drafts,
+                    nav_key,
+                );
             }
             KeyAction::Escape => {
                 ev.prevent_default();
-                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, drafts, escape_at);
+                handle_cell_action(
+                    puzzle,
+                    set_puzzle,
+                    set_flash_diff,
+                    cursor,
+                    active_cage,
+                    drafts,
+                    escape_at,
+                );
             }
             KeyAction::Delete => {
                 ev.prevent_default();
-                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, drafts, delete_at);
+                handle_cell_action(
+                    puzzle,
+                    set_puzzle,
+                    set_flash_diff,
+                    cursor,
+                    active_cage,
+                    drafts,
+                    delete_at,
+                );
             }
             KeyAction::Splinter => {
                 ev.prevent_default();
-                handle_cell_action(puzzle, set_puzzle, cursor, active_cage, drafts, splinter_at);
+                handle_cell_action(
+                    puzzle,
+                    set_puzzle,
+                    set_flash_diff,
+                    cursor,
+                    active_cage,
+                    drafts,
+                    splinter_at,
+                );
             }
         }
     });
@@ -525,6 +592,7 @@ fn handle_save(current_path: RwSignal<Option<String>>, force_prompt: bool) {
 #[allow(clippy::future_not_send)]
 fn handle_open(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     current_path: RwSignal<Option<String>>,
 ) {
     spawn_local(async move {
@@ -534,6 +602,7 @@ fn handle_open(
         if let Some(args) = args {
             let value = invoke("load_puzzle", args).await;
             if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(value) {
+                set_flash_diff.set(view.diff.clone());
                 set_puzzle.set(Some(view));
                 current_path.set(Some(path));
             }
@@ -587,6 +656,7 @@ async fn prompt_open_path() -> Option<String> {
 
 fn listen_for_file_actions(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     current_path: RwSignal<Option<String>>,
 ) {
     let cb = Closure::<dyn FnMut(JsValue)>::new(move |event: JsValue| {
@@ -595,7 +665,7 @@ fn listen_for_file_actions(
                 match action.as_str() {
                     "save" => handle_save(current_path, false),
                     "save_as" => handle_save(current_path, true),
-                    "open" => handle_open(set_puzzle, current_path),
+                    "open" => handle_open(set_puzzle, set_flash_diff, current_path),
                     _ => {}
                 }
             }
@@ -608,6 +678,7 @@ fn listen_for_file_actions(
 fn handle_entry_key(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     drafts: RwSignal<Vec<DraftCage>>,
     entry: RwSignal<Option<OperatorEntry>>,
     current_entry: OperatorEntry,
@@ -632,6 +703,7 @@ fn handle_entry_key(
                 let remaining_drafts = drafts.with_untracked(|ds| ds[1..].to_vec());
                 refresh_from_then(
                     set_puzzle,
+                    set_flash_diff,
                     Box::pin(call("insert_cage", InsertCageArgs { cells, op, target })),
                     move || {
                         set_drafts_if_changed(drafts, remaining_drafts);
@@ -646,6 +718,7 @@ fn handle_entry_key(
                 let Some(anchor) = anchor else { return };
                 refresh_from_then(
                     set_puzzle,
+                    set_flash_diff,
                     Box::pin(call(
                         "set_cage_operation",
                         SetCageOperationArgs { anchor, op, target },
@@ -732,6 +805,7 @@ fn handle_navigate(
 fn handle_shift_arrow(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,
     drafts: RwSignal<Vec<DraftCage>>,
@@ -750,7 +824,7 @@ fn handle_shift_arrow(
     let Some((neighbor, action)) = action else {
         return;
     };
-    apply_edit(set_puzzle, drafts, active_cage, action);
+    apply_edit(set_puzzle, set_flash_diff, drafts, active_cage, action);
     if cursor.get_untracked() != neighbor {
         cursor.set(neighbor);
     }
@@ -760,6 +834,7 @@ fn handle_shift_arrow(
 fn handle_cell_action(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     cursor: RwSignal<(usize, usize)>,
     active_cage: RwSignal<Option<usize>>,
     drafts: RwSignal<Vec<DraftCage>>,
@@ -771,12 +846,13 @@ fn handle_cell_action(
             .map(|v| drafts.with_untracked(|ds| branch(at, v, ds.first())))
     });
     let Some(action) = action else { return };
-    apply_edit(set_puzzle, drafts, active_cage, action);
+    apply_edit(set_puzzle, set_flash_diff, drafts, active_cage, action);
     sync_active_cage(puzzle, cursor, active_cage);
 }
 
 pub fn apply_edit(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     drafts: RwSignal<Vec<DraftCage>>,
     active_cage: RwSignal<Option<usize>>,
     action: CageEdit,
@@ -789,6 +865,7 @@ pub fn apply_edit(
         CageEdit::ExtendCage { anchor, cell } => {
             dispatch_edit(
                 set_puzzle,
+                set_flash_diff,
                 drafts,
                 Box::pin(call_edit("extend_cage", ExtendCageArgs { anchor, cell })),
                 None,
@@ -797,6 +874,7 @@ pub fn apply_edit(
         CageEdit::MergeCages { a_anchor, b_anchor } => {
             dispatch_edit(
                 set_puzzle,
+                set_flash_diff,
                 drafts,
                 Box::pin(call_edit(
                     "merge_cages",
@@ -808,6 +886,7 @@ pub fn apply_edit(
         CageEdit::ShrinkCage(cell) => {
             dispatch_edit(
                 set_puzzle,
+                set_flash_diff,
                 drafts,
                 Box::pin(call_edit("shrink_cage", CellArgs { cell })),
                 None,
@@ -816,6 +895,7 @@ pub fn apply_edit(
         CageEdit::SplinterFromCommitted(cell) => {
             dispatch_edit(
                 set_puzzle,
+                set_flash_diff,
                 drafts,
                 Box::pin(call_edit("shrink_cage", CellArgs { cell })),
                 Some(DraftCage { cells: vec![cell] }),
@@ -824,6 +904,7 @@ pub fn apply_edit(
         CageEdit::RemoveCage(anchor) => {
             refresh_from_then(
                 set_puzzle,
+                set_flash_diff,
                 Box::pin(call("remove_cage", AnchorArgs { anchor })),
                 move || {
                     if active_cage.get_untracked().is_some() {
@@ -844,12 +925,14 @@ fn set_drafts_if_changed(drafts: RwSignal<Vec<DraftCage>>, next: Vec<DraftCage>)
 
 pub fn dispatch_edit(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     drafts: RwSignal<Vec<DraftCage>>,
     fut: Pin<Box<dyn Future<Output = Option<EditResult>>>>,
     override_draft: Option<DraftCage>,
 ) {
     spawn_local(async move {
         if let Some(result) = fut.await {
+            set_flash_diff.set(result.view.diff.clone());
             set_puzzle.set(Some(result.view));
             let next_drafts = override_draft.map_or(result.drafts, |d| vec![d]);
             set_drafts_if_changed(drafts, next_drafts);
@@ -871,18 +954,21 @@ pub fn sync_active_cage(
 
 fn refresh_from(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     fut: Pin<Box<dyn Future<Output = Option<PuzzleView>>>>,
 ) {
-    refresh_from_then(set_puzzle, fut, || {});
+    refresh_from_then(set_puzzle, set_flash_diff, fut, || {});
 }
 
 fn refresh_from_then(
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     fut: Pin<Box<dyn Future<Output = Option<PuzzleView>>>>,
     on_success: impl FnOnce() + 'static,
 ) {
     spawn_local(async move {
         if let Some(view) = fut.await {
+            set_flash_diff.set(view.diff.clone());
             set_puzzle.set(Some(view));
             on_success();
         }

@@ -1,29 +1,11 @@
-// FlashOverlay is public API not yet wired into the main binary entry-point;
-// suppress dead_code lint for this module.
-#![allow(dead_code)]
-
 use crate::diff::{flash_entries, FlashEntry, PuzzleDiff};
 use leptos::prelude::*;
 
-/// Overlay that renders a `PuzzleDiff` as a transient flash animation.
-///
-/// Positions itself as a `<g>` inside the grid SVG with `pointer-events: none`.
-/// Removed digits flash with opacity 1→0 and a strikethrough tint.
-/// Added digits highlight briefly with a glow.
-/// Duration is controlled by the CSS variable `--flash-duration` (default 300ms).
-/// When `prefers-reduced-motion: reduce` is set, the duration collapses to 0ms.
-///
-/// Reentrancy: each new diff increments a generation counter; stale `set_timeout`
-/// callbacks check the generation before clearing the state.
 #[component]
 pub fn FlashOverlay(
-    /// The current diff to animate. Each write triggers a new flash.
     diff: ReadSignal<PuzzleDiff>,
-    /// SVG cell size in SVG units (same as passed to `Layout::new`).
     cell_size: f64,
-    /// SVG margin in SVG units.
     margin: f64,
-    /// Puzzle dimension n.
     n: usize,
 ) -> impl IntoView {
     let entries: RwSignal<Vec<FlashEntry>> = RwSignal::new(vec![]);
