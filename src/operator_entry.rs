@@ -19,6 +19,27 @@ pub enum Step {
     Cancel,
 }
 
+pub fn is_entry_trigger_key(key: &str) -> bool {
+    matches!(
+        key,
+        "+" | "-"
+            | "*"
+            | "x"
+            | "X"
+            | "/"
+            | "0"
+            | "1"
+            | "2"
+            | "3"
+            | "4"
+            | "5"
+            | "6"
+            | "7"
+            | "8"
+            | "9"
+    )
+}
+
 /// Pure state machine step for operator entry mode.
 /// `single_cell` is true when the active cage has exactly 1 cell (allows Given).
 pub fn step(entry: OperatorEntry, key: &str, single_cell: bool) -> Step {
@@ -299,6 +320,39 @@ mod tests {
                 panic!("expected Update")
             };
             assert_commit(step(e, "Enter", false), expected_op, 7);
+        }
+    }
+
+    #[test]
+    fn is_entry_trigger_key_accepts_operator_symbols() {
+        for key in ["+", "-", "*", "x", "X", "/"] {
+            assert!(is_entry_trigger_key(key), "expected {key} to be a trigger");
+        }
+    }
+
+    #[test]
+    fn is_entry_trigger_key_accepts_all_digits() {
+        for key in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] {
+            assert!(is_entry_trigger_key(key), "expected {key} to be a trigger");
+        }
+    }
+
+    #[test]
+    fn is_entry_trigger_key_rejects_non_trigger_keys() {
+        for key in [
+            "Enter",
+            "Escape",
+            "ArrowUp",
+            "a",
+            "z",
+            "Backspace",
+            "Tab",
+            "",
+        ] {
+            assert!(
+                !is_entry_trigger_key(key),
+                "expected {key} NOT to be a trigger"
+            );
         }
     }
 }

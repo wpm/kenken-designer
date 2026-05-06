@@ -6,7 +6,9 @@ use crate::cage_index::{cage_anchor, cage_at, cells_anchor};
 use crate::context_menu::{menu_items_for, ContextMenuItems, MenuContext};
 use crate::grid::Grid;
 use crate::navigation::{move_cursor, next_state, NavKey};
-use crate::operator_entry::{step as operator_step, ActiveCage, OperatorEntry, Step};
+use crate::operator_entry::{
+    is_entry_trigger_key, step as operator_step, ActiveCage, OperatorEntry, Step,
+};
 use leptos::ev::{Event, KeyboardEvent};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -541,6 +543,15 @@ fn install_keydown_handler(
             return;
         }
 
+        if !modifier
+            && !ev.shift_key()
+            && !is_text_input_focused()
+            && try_enter_entry_with_key(puzzle, cursor, drafts, entry, &key)
+        {
+            ev.prevent_default();
+            return;
+        }
+
         let action = dispatch_key(&key, ev.shift_key(), modifier, is_text_input_focused());
         match action {
             KeyAction::Ignore => {}
@@ -890,6 +901,50 @@ fn handle_entry_key(
     }
 }
 
+fn find_entry_target(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    cursor: RwSignal<(usize, usize)>,
+    drafts: RwSignal<Vec<DraftCage>>,
+) -> Option<(OperatorEntry, (usize, usize), bool)> {
+    let committed = puzzle.with_untracked(|opt| {
+        opt.as_ref().and_then(|v| {
+            let (r, c) = cursor.get_untracked();
+            cage_at(v, r, c).map(|idx| {
+                let anchor = cage_anchor(&v.cages[idx]);
+                let cage_op = v.cages[idx].op;
+                let cage_target = v.cages[idx].target;
+                let single_cell = v.cages[idx].cells.len() == 1;
+                let initial = OperatorEntry {
+                    cage: ActiveCage::Committed(idx),
+                    op: Some(cage_op),
+                    digits: if cage_target > 0 {
+                        cage_target.to_string()
+                    } else {
+                        String::new()
+                    },
+                };
+                (initial, anchor, single_cell)
+            })
+        })
+    });
+    if committed.is_some() {
+        return committed;
+    }
+    let (anchor, single_cell) = drafts.with_untracked(|ds| {
+        ds.first()
+            .map(|d| (cells_anchor(&d.cells), d.cells.len() == 1))
+    })?;
+    Some((
+        OperatorEntry {
+            cage: ActiveCage::Draft,
+            op: None,
+            digits: String::new(),
+        },
+        anchor,
+        single_cell,
+    ))
+}
+
 fn handle_enter_key(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
@@ -897,40 +952,34 @@ fn handle_enter_key(
     entry: RwSignal<Option<OperatorEntry>>,
     ev: &KeyboardEvent,
 ) {
-    let active = puzzle.with_untracked(|opt| {
-        opt.as_ref().and_then(|v| {
-            let (r, c) = cursor.get_untracked();
-            cage_at(v, r, c).map(|idx| {
-                let anchor = cage_anchor(&v.cages[idx]);
-                let cage_op = v.cages[idx].op;
-                let cage_target = v.cages[idx].target;
-                (ActiveCage::Committed(idx), anchor, cage_op, cage_target)
-            })
-        })
-    });
-    if let Some((active_cage_val, anchor, cage_op, cage_target)) = active {
+    if let Some((initial, anchor, _)) = find_entry_target(puzzle, cursor, drafts) {
         ev.prevent_default();
         cursor.set(anchor);
-        entry.set(Some(OperatorEntry {
-            cage: active_cage_val,
-            op: Some(cage_op),
-            digits: if cage_target > 0 {
-                cage_target.to_string()
-            } else {
-                String::new()
-            },
-        }));
-        return;
+        entry.set(Some(initial));
     }
-    let draft_anchor = drafts.with_untracked(|ds| ds.first().map(|d| cells_anchor(&d.cells)));
-    if let Some(anchor) = draft_anchor {
-        ev.prevent_default();
-        cursor.set(anchor);
-        entry.set(Some(OperatorEntry {
-            cage: ActiveCage::Draft,
-            op: None,
-            digits: String::new(),
-        }));
+}
+
+fn try_enter_entry_with_key(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    cursor: RwSignal<(usize, usize)>,
+    drafts: RwSignal<Vec<DraftCage>>,
+    entry: RwSignal<Option<OperatorEntry>>,
+    key: &str,
+) -> bool {
+    if !is_entry_trigger_key(key) {
+        return false;
+    }
+    let Some((initial_entry, anchor, single_cell)) = find_entry_target(puzzle, cursor, drafts)
+    else {
+        return false;
+    };
+    match operator_step(initial_entry, key, single_cell) {
+        Step::Update(new_entry) => {
+            cursor.set(anchor);
+            entry.set(Some(new_entry));
+            true
+        }
+        Step::Commit { .. } | Step::Cancel => false,
     }
 }
 
