@@ -393,29 +393,31 @@ pub fn App() -> impl IntoView {
 
     view! {
         <main class="app-main">
-            <CageBand
-                active_cage_anchor=active_cage_anchor
-                active_cage_cells=active_cage_cells
-                on_commit=on_band_commit
-            />
-            {move || {
-                let view = puzzle.get()?;
-                let drafts_value = drafts.get();
-                Some(view! {
-                    <Grid
-                        view=view
-                        drafts=drafts_value
-                        size=560
-                        cursor=cursor.into()
-                        active_cage=active_cage.into()
-                        on_cell_click=on_cell_click
-                        on_cell_right_click=on_cell_right_click
-                        entry=entry.into()
-                        flash_diff=flash_diff
-                        move_mode=move_mode.into()
-                    />
-                })
-            }}
+            <div class="grid-and-band">
+                {move || {
+                    let view = puzzle.get()?;
+                    let drafts_value = drafts.get();
+                    Some(view! {
+                        <Grid
+                            view=view
+                            drafts=drafts_value
+                            size=560
+                            cursor=cursor.into()
+                            active_cage=active_cage.into()
+                            on_cell_click=on_cell_click
+                            on_cell_right_click=on_cell_right_click
+                            entry=entry.into()
+                            flash_diff=flash_diff
+                            move_mode=move_mode.into()
+                        />
+                    })
+                }}
+                <CageBand
+                    active_cage_anchor=active_cage_anchor
+                    active_cage_cells=active_cage_cells
+                    on_commit=on_band_commit
+                />
+            </div>
             {move || context_menu.get().map(|state| {
                 view! {
                     <crate::context_menu_view::ContextMenu

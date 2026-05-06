@@ -86,9 +86,17 @@ a:hover {
   color: var(--paper-ink-2);
 }
 
+.grid-and-band {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
 .grid-svg {
   display: block;
-  width: min(calc(100vw - 3rem), calc(100vh - 8.25rem));
+  /* 144px = 128px cage-band + 1rem gap */
+  width: min(calc(100vw - 3rem - 144px), calc(100vh - 8.25rem));
   height: auto;
   aspect-ratio: 1 / 1;
 }
@@ -100,26 +108,24 @@ a:hover {
 
 /* ── Cage band ─────────────────────────────────────────────────── */
 
+/* Always reserves 128px wide so the layout doesn't shift when band appears/hides */
 .cage-band {
-  width: 100%;
-  max-width: 640px;
+  width: 128px;
+  flex-shrink: 0;
   box-sizing: border-box;
   outline: none;
+  align-self: stretch;
 }
 
-.cage-band--collapsed {
-  height: 140px;
-}
 
 .cage-band--active {
-  height: 140px;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
   gap: 4px;
   border: 1px solid var(--paper-line);
   border-radius: 6px;
-  padding: 8px 4px;
+  padding: 4px 8px;
   background: var(--paper-bg);
   overflow: hidden;
 }
@@ -127,7 +133,7 @@ a:hover {
 .cage-band__strip {
   flex: 1;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: 8px;
   overflow: hidden;
   align-items: center;
@@ -135,8 +141,8 @@ a:hover {
 
 .cage-band__arrow {
   flex-shrink: 0;
-  width: 28px;
-  height: 32px;
+  width: 100%;
+  height: 28px;
   padding: 0;
   font-size: 1.25rem;
   line-height: 1;
