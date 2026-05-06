@@ -776,7 +776,7 @@ mod tests {
             !next.is_covered(Cell::new(0, 0)) || {
                 // (0,0) might now be part of the target — check it's in the target
                 next.cage_at(Cell::new(0, 0))
-                    .map_or(false, |c| c.cells().len() == 3)
+                    .is_some_and(|c| c.cells().len() == 3)
             }
         );
         // Target should have 3 cells now
