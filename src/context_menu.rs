@@ -116,6 +116,7 @@ mod tests {
             n,
             cells: vec![vec![Vec::new(); n]; n],
             cages,
+            diff: crate::diff::PuzzleDiff::default(),
         }
     }
 

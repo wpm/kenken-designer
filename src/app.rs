@@ -428,7 +428,7 @@ pub fn App() -> impl IntoView {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // All args are lightweight signal handles
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn install_keydown_handler(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
