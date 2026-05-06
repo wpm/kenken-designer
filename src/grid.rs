@@ -427,7 +427,7 @@ fn render_op_labels(
                 });
                 if let Some(e) = entry_val.filter(|_| is_entry_cage) {
                     let glyph = e.op.map_or("", op_glyph);
-                    format!("{}{}|", glyph, e.digits)
+                    format!("{}{}|", e.digits, glyph)
                 } else if is_draft {
                     "?".to_string()
                 } else {
@@ -538,7 +538,7 @@ const fn op_glyph(op: OpKind) -> &'static str {
 
 pub fn op_label(op: OpKind, target: u32) -> String {
     match op {
-        OpKind::Add => format!("+{target}"),
+        OpKind::Add => format!("{target}+"),
         OpKind::Sub => format!("{target}\u{2212}"),
         OpKind::Mul => format!("{target}\u{00d7}"),
         OpKind::Div => format!("{target}\u{00f7}"),
@@ -560,4 +560,35 @@ pub const fn ceil_sqrt(n: usize) -> usize {
 #[allow(clippy::cast_precision_loss)]
 pub const fn usize_to_f64(x: usize) -> f64 {
     x as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::OpKind;
+
+    #[test]
+    fn op_label_add_is_number_then_plus() {
+        assert_eq!(op_label(OpKind::Add, 15), "15+");
+    }
+
+    #[test]
+    fn op_label_sub_is_number_then_minus() {
+        assert_eq!(op_label(OpKind::Sub, 3), "3\u{2212}");
+    }
+
+    #[test]
+    fn op_label_mul_is_number_then_times() {
+        assert_eq!(op_label(OpKind::Mul, 24), "24\u{00d7}");
+    }
+
+    #[test]
+    fn op_label_div_is_number_then_div() {
+        assert_eq!(op_label(OpKind::Div, 2), "2\u{00f7}");
+    }
+
+    #[test]
+    fn op_label_given_is_just_number() {
+        assert_eq!(op_label(OpKind::Given, 7), "7");
+    }
 }

@@ -6,7 +6,9 @@ use crate::cage_index::{cage_anchor, cage_at, cells_anchor};
 use crate::context_menu::{menu_items_for, ContextMenuItems, MenuContext};
 use crate::grid::Grid;
 use crate::navigation::{move_cursor, next_state, NavKey};
-use crate::operator_entry::{step as operator_step, ActiveCage, OperatorEntry, Step};
+use crate::operator_entry::{
+    is_entry_trigger_key, step as operator_step, ActiveCage, OperatorEntry, Step,
+};
 use leptos::ev::{Event, KeyboardEvent};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -244,7 +246,7 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
     }
     match key {
         "Escape" => KeyAction::Escape,
-        "x" | "X" => KeyAction::Delete,
+        "Delete" => KeyAction::Delete,
         " " | "Spacebar" | "c" | "C" => KeyAction::Splinter,
         "m" | "M" => KeyAction::MoveCell,
         _ => KeyAction::Ignore,
@@ -538,6 +540,15 @@ fn install_keydown_handler(
 
         if key == "Enter" && !ev.shift_key() && !modifier && !is_text_input_focused() {
             handle_enter_key(puzzle, cursor, drafts, entry, &ev);
+            return;
+        }
+
+        if !modifier
+            && !ev.shift_key()
+            && !is_text_input_focused()
+            && try_enter_entry_with_key(puzzle, cursor, drafts, entry, &key)
+        {
+            ev.prevent_default();
             return;
         }
 
@@ -890,6 +901,60 @@ fn handle_entry_key(
     }
 }
 
+struct EntryTarget {
+    initial: OperatorEntry,
+    anchor: (usize, usize),
+    single_cell: bool,
+}
+
+fn find_entry_target(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    cursor: RwSignal<(usize, usize)>,
+    drafts: RwSignal<Vec<DraftCage>>,
+) -> Option<EntryTarget> {
+    let committed = puzzle.with_untracked(|opt| {
+        opt.as_ref().and_then(|v| {
+            let (r, c) = cursor.get_untracked();
+            cage_at(v, r, c).map(|idx| {
+                let anchor = cage_anchor(&v.cages[idx]);
+                let cage_op = v.cages[idx].op;
+                let cage_target = v.cages[idx].target;
+                let single_cell = v.cages[idx].cells.len() == 1;
+                let initial = OperatorEntry {
+                    cage: ActiveCage::Committed(idx),
+                    op: Some(cage_op),
+                    digits: if cage_target > 0 {
+                        cage_target.to_string()
+                    } else {
+                        String::new()
+                    },
+                };
+                EntryTarget {
+                    initial,
+                    anchor,
+                    single_cell,
+                }
+            })
+        })
+    });
+    if committed.is_some() {
+        return committed;
+    }
+    let (anchor, single_cell) = drafts.with_untracked(|ds| {
+        ds.first()
+            .map(|d| (cells_anchor(&d.cells), d.cells.len() == 1))
+    })?;
+    Some(EntryTarget {
+        initial: OperatorEntry {
+            cage: ActiveCage::Draft,
+            op: None,
+            digits: String::new(),
+        },
+        anchor,
+        single_cell,
+    })
+}
+
 fn handle_enter_key(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
@@ -897,40 +962,34 @@ fn handle_enter_key(
     entry: RwSignal<Option<OperatorEntry>>,
     ev: &KeyboardEvent,
 ) {
-    let active = puzzle.with_untracked(|opt| {
-        opt.as_ref().and_then(|v| {
-            let (r, c) = cursor.get_untracked();
-            cage_at(v, r, c).map(|idx| {
-                let anchor = cage_anchor(&v.cages[idx]);
-                let cage_op = v.cages[idx].op;
-                let cage_target = v.cages[idx].target;
-                (ActiveCage::Committed(idx), anchor, cage_op, cage_target)
-            })
-        })
-    });
-    if let Some((active_cage_val, anchor, cage_op, cage_target)) = active {
+    if let Some(t) = find_entry_target(puzzle, cursor, drafts) {
         ev.prevent_default();
-        cursor.set(anchor);
-        entry.set(Some(OperatorEntry {
-            cage: active_cage_val,
-            op: Some(cage_op),
-            digits: if cage_target > 0 {
-                cage_target.to_string()
-            } else {
-                String::new()
-            },
-        }));
-        return;
+        cursor.set(t.anchor);
+        entry.set(Some(t.initial));
     }
-    let draft_anchor = drafts.with_untracked(|ds| ds.first().map(|d| cells_anchor(&d.cells)));
-    if let Some(anchor) = draft_anchor {
-        ev.prevent_default();
-        cursor.set(anchor);
-        entry.set(Some(OperatorEntry {
-            cage: ActiveCage::Draft,
-            op: None,
-            digits: String::new(),
-        }));
+}
+
+fn try_enter_entry_with_key(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    cursor: RwSignal<(usize, usize)>,
+    drafts: RwSignal<Vec<DraftCage>>,
+    entry: RwSignal<Option<OperatorEntry>>,
+    key: &str,
+) -> bool {
+    if !is_entry_trigger_key(key) {
+        return false;
+    }
+    let Some(t) = find_entry_target(puzzle, cursor, drafts) else {
+        return false;
+    };
+    match operator_step(t.initial, key, t.single_cell) {
+        Step::Update(new_entry) => {
+            cursor.set(t.anchor);
+            entry.set(Some(new_entry));
+            true
+        }
+        // Unreachable: trigger keys cannot produce Commit (requires Enter) or Cancel (requires Escape).
+        Step::Commit { .. } | Step::Cancel => false,
     }
 }
 
@@ -1261,9 +1320,17 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_key_returns_delete_for_x() {
-        assert_eq!(dispatch_key("x", false, false, false), KeyAction::Delete);
-        assert_eq!(dispatch_key("X", false, false, false), KeyAction::Delete);
+    fn dispatch_key_returns_delete_for_delete_key() {
+        assert_eq!(
+            dispatch_key("Delete", false, false, false),
+            KeyAction::Delete
+        );
+    }
+
+    #[test]
+    fn dispatch_key_ignores_x_and_x() {
+        assert_eq!(dispatch_key("x", false, false, false), KeyAction::Ignore);
+        assert_eq!(dispatch_key("X", false, false, false), KeyAction::Ignore);
     }
 
     #[test]
@@ -1275,7 +1342,7 @@ mod tests {
 
     #[test]
     fn dispatch_key_ignores_modifier_plus_other_keys() {
-        // Cmd+x, Cmd+c, Cmd+Escape, Cmd+Space should not trigger cage edits.
+        // Cmd+c, Cmd+Escape, Cmd+Space should not trigger cage edits.
         assert_eq!(dispatch_key("x", false, true, false), KeyAction::Ignore);
         assert_eq!(dispatch_key("c", false, true, false), KeyAction::Ignore);
         assert_eq!(dispatch_key(" ", false, true, false), KeyAction::Ignore);
