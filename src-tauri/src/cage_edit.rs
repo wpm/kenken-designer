@@ -199,9 +199,52 @@ pub fn legal_move_targets(puzzle: &Puzzle, cell: (usize, usize)) -> Vec<(usize, 
         }
     }
 
-    // Sort row-major: by row first, then column
     targets.sort_unstable();
     targets
+}
+
+/// Shared mutation logic for `do_move_cell` and `do_flip_cell`: removes `cell_obj` from
+/// `src_poly`, adds it to `tgt_poly`, and reinserts both (or drafts them) as appropriate.
+fn apply_cell_transfer(
+    puzzle: &Puzzle,
+    n: u8,
+    cell_obj: Cell,
+    src_poly: &Polyomino,
+    src_op: Operation,
+    tgt_poly: &Polyomino,
+    tgt_op: Operation,
+) -> Result<(Puzzle, Vec<DraftCage>), String> {
+    let new_tgt_poly = tgt_poly.extend(cell_obj).map_err(|e| format!("{e:?}"))?;
+    let intermediate = puzzle.clone().remove_cage(src_poly).remove_cage(tgt_poly);
+    let mut drafts = Vec::new();
+
+    let next = if src_poly.len() == 1 {
+        intermediate
+    } else {
+        let new_src_poly = src_poly.without(cell_obj).map_err(|e| format!("{e:?}"))?;
+        if op_legal_for_size(src_op, new_src_poly.len()) {
+            intermediate
+                .insert_cage(Cage::new(n, new_src_poly, src_op))
+                .map_err(|e| format!("{e:?}"))?
+        } else {
+            drafts.push(DraftCage {
+                cells: cells_to_vec(&new_src_poly),
+            });
+            intermediate
+        }
+    };
+
+    if op_legal_for_size(tgt_op, new_tgt_poly.len()) {
+        let next = next
+            .insert_cage(Cage::new(n, new_tgt_poly, tgt_op))
+            .map_err(|e| format!("{e:?}"))?;
+        Ok((next, drafts))
+    } else {
+        drafts.push(DraftCage {
+            cells: cells_to_vec(&new_tgt_poly),
+        });
+        Ok((next, drafts))
+    }
 }
 
 pub fn do_move_cell(
@@ -225,50 +268,14 @@ pub fn do_move_cell(
     let tgt_op = tgt_cage.operation();
     let tgt_poly = tgt_cage.polyomino().clone();
 
-    // Validate adjacency: cell must be 4-adjacent to at least one cell in target cage
-    let is_adjacent = cell_obj.neighbors_4().any(|nb| tgt_poly.contains_cell(nb));
-    if !is_adjacent {
+    if !cell_obj.neighbors_4().any(|nb| tgt_poly.contains_cell(nb)) {
         return Err("cell is not adjacent to target cage".into());
     }
-
-    // Validate: removing cell from source keeps source connected (or empties it)
     if src_poly.len() > 1 && src_poly.without(cell_obj).is_err() {
         return Err("removing cell would disconnect source cage".into());
     }
 
-    let new_tgt_poly = tgt_poly.extend(cell_obj).map_err(|e| format!("{e:?}"))?;
-
-    let intermediate = puzzle.clone().remove_cage(&src_poly).remove_cage(&tgt_poly);
-    let mut drafts = Vec::new();
-
-    let next = if src_poly.len() == 1 {
-        // Source cage becomes empty — just drop it
-        intermediate
-    } else {
-        let new_src_poly = src_poly.without(cell_obj).map_err(|e| format!("{e:?}"))?;
-        if op_legal_for_size(src_op, new_src_poly.len()) {
-            intermediate
-                .insert_cage(Cage::new(n, new_src_poly, src_op))
-                .map_err(|e| format!("{e:?}"))?
-        } else {
-            drafts.push(DraftCage {
-                cells: cells_to_vec(&new_src_poly),
-            });
-            intermediate
-        }
-    };
-
-    if op_legal_for_size(tgt_op, new_tgt_poly.len()) {
-        let next = next
-            .insert_cage(Cage::new(n, new_tgt_poly, tgt_op))
-            .map_err(|e| format!("{e:?}"))?;
-        Ok((next, drafts))
-    } else {
-        drafts.push(DraftCage {
-            cells: cells_to_vec(&new_tgt_poly),
-        });
-        Ok((next, drafts))
-    }
+    apply_cell_transfer(puzzle, n, cell_obj, &src_poly, src_op, &tgt_poly, tgt_op)
 }
 
 pub fn do_flip_cell(
@@ -292,38 +299,7 @@ pub fn do_flip_cell(
     let tgt_op = tgt_cage.operation();
     let tgt_poly = tgt_cage.polyomino().clone();
 
-    let new_tgt_poly = tgt_poly.extend(cell_obj).map_err(|e| format!("{e:?}"))?;
-
-    let intermediate = puzzle.clone().remove_cage(&src_poly).remove_cage(&tgt_poly);
-    let mut drafts = Vec::new();
-
-    let next = if src_poly.len() == 1 {
-        intermediate
-    } else {
-        let new_src_poly = src_poly.without(cell_obj).map_err(|e| format!("{e:?}"))?;
-        if op_legal_for_size(src_op, new_src_poly.len()) {
-            intermediate
-                .insert_cage(Cage::new(n, new_src_poly, src_op))
-                .map_err(|e| format!("{e:?}"))?
-        } else {
-            drafts.push(DraftCage {
-                cells: cells_to_vec(&new_src_poly),
-            });
-            intermediate
-        }
-    };
-
-    if op_legal_for_size(tgt_op, new_tgt_poly.len()) {
-        let next = next
-            .insert_cage(Cage::new(n, new_tgt_poly, tgt_op))
-            .map_err(|e| format!("{e:?}"))?;
-        Ok((next, drafts))
-    } else {
-        drafts.push(DraftCage {
-            cells: cells_to_vec(&new_tgt_poly),
-        });
-        Ok((next, drafts))
-    }
+    apply_cell_transfer(puzzle, n, cell_obj, &src_poly, src_op, &tgt_poly, tgt_op)
 }
 
 #[cfg(test)]

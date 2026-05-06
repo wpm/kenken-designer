@@ -611,7 +611,6 @@ fn enter_move_mode(
             .map_or_else(Vec::new, |v| legal_move_targets(v, cell))
     });
     if targets.is_empty() {
-        // Silently do nothing if no legal targets
         return;
     }
     move_mode.set(Some(MoveState {

@@ -460,7 +460,6 @@ fn render_op_labels(
 /// - Source cell: white overlay at half opacity (dims the cell)
 /// - Currently-selected target cage cells: dashed accent border
 /// - Other legal target cage cells: thin accent border
-#[allow(clippy::cast_possible_truncation)]
 fn render_move_overlays(state: &MoveState, view: &PuzzleView, layout: Layout) -> Vec<AnyView> {
     let cell = layout.cell;
     let mut out: Vec<AnyView> = Vec::new();
@@ -493,9 +492,11 @@ fn render_move_overlays(state: &MoveState, view: &PuzzleView, layout: Layout) ->
         let dash = if is_selected { "4,3" } else { "" };
 
         // Find target cage cells
-        if let Some(cage) = view.cages.iter().find(|cage| {
-            cage.cells.iter().min_by_key(|&&(r, c)| (r, c)).copied() == Some(target_anchor)
-        }) {
+        if let Some(cage) = view
+            .cages
+            .iter()
+            .find(|cage| cage_anchor(cage) == target_anchor)
+        {
             for &(r, c) in &cage.cells {
                 let (x, y) = layout.origin(r, c);
                 out.push(
