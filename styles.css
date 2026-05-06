@@ -104,7 +104,6 @@ a:hover {
 }
 
 .size-control {
-  font-family: "Inter", system-ui, sans-serif;
   color: var(--paper-ink);
   /* Asymmetric margin shifts the control left of page-center to align with
      the grid, which itself is offset left by the cage-band column. */
