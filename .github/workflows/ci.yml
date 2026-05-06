@@ -8,17 +8,16 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   ci:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Checkout kenken library
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wpm/KenKen
           path: kenken-lib
@@ -38,7 +37,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Cache apt packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /var/cache/apt/archives
           key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
@@ -110,10 +109,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Checkout kenken library
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wpm/KenKen
           path: kenken-lib
@@ -135,7 +134,7 @@ jobs:
 
       - name: Cache apt packages
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /var/cache/apt/archives
           key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
