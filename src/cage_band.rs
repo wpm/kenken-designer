@@ -1,4 +1,4 @@
-use crate::app::PuzzleView;
+use crate::app::{PuzzleView, GRID_SIZE};
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
 use crate::cage_index::cage_anchor;
 use crate::grid::{ceil_sqrt, op_label, usize_to_f64, UNCAGED_FILL};
@@ -53,20 +53,20 @@ async fn call_apply_narrowing(anchor: (usize, usize), tuple: Vec<u32>) -> Option
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 
-/// Width of each thumbnail (square).
+/// Side length of each thumbnail (square).
 const THUMB_SIZE: u32 = 112;
 /// Gap between thumbnails.
 const THUMB_GAP: u32 = 8;
-/// Width of the left/right advance buttons.
-const BTN_WIDTH: u32 = 28;
+/// Height of the up/down advance buttons.
+const BTN_HEIGHT: u32 = 28;
 
-/// Total width each thumbnail occupies including gap.
+/// Total height each thumbnail occupies including gap.
 const THUMB_STEP: u32 = THUMB_SIZE + THUMB_GAP;
 
-/// How many thumbnails fit side-by-side in the band.
-/// Derived from `.cage-band { max-width: 640px }` minus 2×8px padding, 2×4px gap, `2×BTN_WIDTH`.
-#[allow(clippy::cast_possible_truncation)] // THUMB_STEP is small; quotient fits in usize
-const VISIBLE_COUNT: usize = ((600 - 2 * BTN_WIDTH) / THUMB_STEP) as usize;
+/// How many thumbnails fit stacked in the band.
+/// Derived from `GRID_SIZE` minus 2×8px padding, 2×4px gap, `2×BTN_HEIGHT`.
+#[allow(clippy::cast_possible_truncation)] // GRID_SIZE and THUMB_STEP are small; quotient fits in usize
+const VISIBLE_COUNT: usize = ((GRID_SIZE - 2 * BTN_HEIGHT) / THUMB_STEP) as usize;
 
 // ─── Thumbnail SVG ───────────────────────────────────────────────────────────
 
@@ -302,11 +302,11 @@ fn Thumbnail(
 
 // ─── CageBand component ──────────────────────────────────────────────────────
 
-/// Horizontal strip showing narrowing previews for the active cage.
+/// Vertical strip on the right side of the grid showing narrowing previews for the active cage.
 ///
 /// When `active_cage_anchor` is `None`, collapses to a 4px placeholder bar.
 /// When a cage is active, loads ranked tuples from the backend and renders
-/// thumbnail previews with left/right scrolling and Enter-to-commit.
+/// thumbnail previews with up/down scrolling and Enter-to-commit.
 #[component]
 #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 pub fn CageBand(
@@ -338,38 +338,38 @@ pub fn CageBand(
 
     let is_active = move || active_cage_anchor.get().is_some();
 
-    let can_scroll_left = move || scroll_offset.get() > 0;
-    let can_scroll_right = move || {
+    let can_scroll_up = move || scroll_offset.get() > 0;
+    let can_scroll_down = move || {
         let total = ranked.with(Vec::len);
         scroll_offset.get() + VISIBLE_COUNT < total
     };
 
-    let scroll_left = move || {
+    let scroll_up = move || {
         let off = scroll_offset.get();
         if off > 0 {
             scroll_offset.set(off - 1);
         }
     };
 
-    let scroll_right = move || {
-        if can_scroll_right() {
+    let scroll_down = move || {
+        if can_scroll_down() {
             scroll_offset.set(scroll_offset.get() + 1);
         }
     };
 
-    let on_left = move |_| scroll_left();
-    let on_right = move |_| scroll_right();
+    let on_up = move |_| scroll_up();
+    let on_down = move |_| scroll_down();
 
     let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
         let key = ev.key();
         match key.as_str() {
-            "ArrowLeft" => {
+            "ArrowUp" => {
                 ev.prevent_default();
-                scroll_left();
+                scroll_up();
             }
-            "ArrowRight" => {
+            "ArrowDown" => {
                 ev.prevent_default();
-                scroll_right();
+                scroll_down();
             }
             "Escape" => {
                 ev.prevent_default();
@@ -418,11 +418,11 @@ pub fn CageBand(
                 view! {
                     <button
                         class="cage-band__arrow"
-                        disabled=move || !can_scroll_left()
-                        on:click=on_left
-                        aria-label="Scroll left"
+                        disabled=move || !can_scroll_up()
+                        on:click=on_up
+                        aria-label="Scroll up"
                     >
-                        "‹"
+                        "▲"
                     </button>
                     <div class="cage-band__strip">
                         <For
@@ -447,11 +447,11 @@ pub fn CageBand(
                     </div>
                     <button
                         class="cage-band__arrow"
-                        disabled=move || !can_scroll_right()
-                        on:click=on_right
-                        aria-label="Scroll right"
+                        disabled=move || !can_scroll_down()
+                        on:click=on_down
+                        aria-label="Scroll down"
                     >
-                        "›"
+                        "▼"
                     </button>
                 }.into_any()
             }}
@@ -464,4 +464,5 @@ mod tests {
     use super::*;
 
     const _: () = assert!(THUMB_STEP > THUMB_SIZE);
+    const _: () = assert!(VISIBLE_COUNT > 0);
 }
