@@ -177,7 +177,6 @@ pub fn ContextMenu(
                         on:mouseleave=item_leave
                         on:mousedown=move |ev: leptos::ev::MouseEvent| {
                             ev.prevent_default();
-                            // Enter move mode for the right-clicked cell
                             let targets = puzzle.with_untracked(|opt| {
                                 opt.as_ref().map_or_else(Vec::new, |v| {
                                     crate::cage_edit::legal_move_targets(v, (r, c))

@@ -478,7 +478,6 @@ fn install_keydown_handler(
         let modifier = ev.meta_key() || ev.ctrl_key();
         let key = ev.key();
 
-        // In move mode, intercept Tab, Enter, Escape before normal dispatch.
         if move_mode.with_untracked(Option::is_some) {
             ev.prevent_default();
             handle_move_mode_key(
@@ -644,7 +643,6 @@ fn handle_move_mode_key(
                     |i| if i == 0 { len - 1 } else { i - 1 },
                 ))
             } else {
-                // Tab: (selected.unwrap_or(targets.len() - 1) + 1) % targets.len()
                 Some((state.selected.unwrap_or(len - 1) + 1) % len)
             };
             move_mode.set(Some(MoveState {
