@@ -7,6 +7,7 @@ mod view;
 use std::sync::Mutex;
 
 use kenken::{Delta, Puzzle, Values};
+use tauri::image::Image;
 use tauri::menu::{
     AboutMetadata, IsMenuItem, Menu, MenuEvent, MenuItemBuilder, PredefinedMenuItem, Submenu,
 };
@@ -281,11 +282,13 @@ fn apply_narrowing(
 fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let pkg_info = app.package_info();
     let config = app.config();
+    let banner = Image::from_bytes(include_bytes!("../assets/banner.png"))?;
     let about_metadata = AboutMetadata {
-        name: Some(pkg_info.name.clone()),
+        name: None,
         version: Some(pkg_info.version.to_string()),
         copyright: config.bundle.copyright.clone(),
         authors: config.bundle.publisher.clone().map(|p| vec![p]),
+        icon: Some(banner),
         ..Default::default()
     };
 
@@ -344,7 +347,11 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         pkg_info.name.clone(),
         true,
         &[
-            &PredefinedMenuItem::about(app, None, Some(about_metadata.clone()))?,
+            &PredefinedMenuItem::about(
+                app,
+                Some("About KenKen Designer"),
+                Some(about_metadata.clone()),
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, None)?,
             &PredefinedMenuItem::separator(app)?,
