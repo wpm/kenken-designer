@@ -42,14 +42,30 @@ fn get_state(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
 
 fn apply_undo(state: &Mutex<Session>) -> Result<PuzzleView, String> {
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
+    let pre = session.current().clone();
     session.undo();
-    Ok(PuzzleView::from(session.current()))
+    let post = session.current().clone();
+    drop(session);
+    let d = same_size_diff(&pre, &post);
+    Ok(PuzzleView::from(&post).with_diff(d))
 }
 
 fn apply_redo(state: &Mutex<Session>) -> Result<PuzzleView, String> {
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
+    let pre = session.current().clone();
     session.redo();
-    Ok(PuzzleView::from(session.current()))
+    let post = session.current().clone();
+    drop(session);
+    let d = same_size_diff(&pre, &post);
+    Ok(PuzzleView::from(&post).with_diff(d))
+}
+
+fn same_size_diff(pre: &Puzzle, post: &Puzzle) -> diff::PuzzleDiff {
+    if pre.n() == post.n() {
+        diff::PuzzleDiff::between(pre, post)
+    } else {
+        diff::PuzzleDiff::default()
+    }
 }
 
 #[tauri::command]
@@ -65,8 +81,12 @@ fn redo(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
 }
 
 fn commit_view(session: &mut Session, next: Puzzle) -> PuzzleView {
-    session.commit(next);
-    PuzzleView::from(session.current())
+    let pre = session.current().clone();
+    let propagated = next.propagate_fully();
+    session.commit(propagated);
+    let post = session.current();
+    let d = diff::PuzzleDiff::between(&pre, post);
+    PuzzleView::from(post).with_diff(d)
 }
 
 fn commit_edit(session: &mut Session, next: Puzzle, drafts: Vec<DraftCage>) -> EditResult {
@@ -825,5 +845,80 @@ mod tests {
         )
         .unwrap();
         assert!(flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn insert_cage_command_returns_diff_when_propagation_changes_fills() {
+        let app = empty_session_app(3);
+        // Insert a Given(1) at (0,0) — propagation removes 1 from row 0 peers.
+        let view = insert_cage(
+            vec![(0, 0)],
+            OpKind::Given,
+            1,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        assert!(
+            !view.diff.is_empty(),
+            "propagation should produce a non-empty diff"
+        );
+    }
+
+    #[test]
+    fn insert_cage_command_returns_empty_diff_when_idempotent() {
+        let app = empty_session_app(3);
+        insert_cage(vec![(0, 0)], OpKind::Add, 1, app.state::<Mutex<Session>>()).unwrap();
+        // Re-inserting the same cage shape with the same op is idempotent; diff should be empty.
+        let view =
+            insert_cage(vec![(0, 0)], OpKind::Add, 1, app.state::<Mutex<Session>>()).unwrap();
+        assert!(
+            view.diff.is_empty(),
+            "idempotent edit should produce an empty diff"
+        );
+    }
+
+    #[test]
+    fn undo_returns_diff_to_undone_state() {
+        let app = empty_session_app(3);
+        // Insert a Given(1) at (0,0) so propagation removes 1 from row peers.
+        insert_cage(
+            vec![(0, 0)],
+            OpKind::Given,
+            1,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        // Undo: the removed candidates come back as "added" in the diff.
+        let view = undo(app.state::<Mutex<Session>>()).unwrap();
+        assert!(
+            !view.diff.is_empty(),
+            "undo of a propagating edit should produce a non-empty diff"
+        );
+        let has_added = view.diff.changes.iter().any(|cd| !cd.added.is_empty());
+        assert!(
+            has_added,
+            "undo diff should contain added candidates (values restored)"
+        );
+    }
+
+    #[test]
+    fn redo_returns_diff_to_redone_state() {
+        let app = empty_session_app(3);
+        insert_cage(
+            vec![(0, 0)],
+            OpKind::Given,
+            1,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        undo(app.state::<Mutex<Session>>()).unwrap();
+        // Redo: propagation re-removes candidates; diff should contain removals.
+        let view = redo(app.state::<Mutex<Session>>()).unwrap();
+        assert!(
+            !view.diff.is_empty(),
+            "redo of a propagating edit should produce a non-empty diff"
+        );
+        let has_removed = view.diff.changes.iter().any(|cd| !cd.removed.is_empty());
+        assert!(has_removed, "redo diff should contain removed candidates");
     }
 }

@@ -110,6 +110,7 @@ pub fn Grid(
     on_cell_click: Callback<(usize, usize)>,
     on_cell_right_click: Callback<(usize, usize, f64, f64)>,
     entry: Signal<Option<OperatorEntry>>,
+    flash_diff: ReadSignal<crate::diff::PuzzleDiff>,
 ) -> impl IntoView {
     let n = view.n;
     debug_assert!(n > 0, "Grid requires a puzzle with n > 0");
@@ -161,6 +162,12 @@ pub fn Grid(
             {active_overlay}
             {cursor_rect}
             {click_overlay}
+            <crate::flash::FlashOverlay
+                diff=flash_diff
+                cell_size=layout.cell
+                margin=MARGIN
+                n=n
+            />
         </svg>
     }
 }

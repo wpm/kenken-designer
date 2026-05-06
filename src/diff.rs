@@ -1,17 +1,13 @@
-// These types are public API used by FlashOverlay, but not yet wired into the
-// main binary entry-point; suppress the lint rather than sprinkle it on every item.
-#![allow(dead_code)]
-
 use crate::grid::{ceil_sqrt, usize_to_f64};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct CellDiff {
     pub cell: (usize, usize),
     pub removed: Vec<u8>,
     pub added: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct PuzzleDiff {
     pub changes: Vec<CellDiff>,
 }

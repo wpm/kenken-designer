@@ -1,7 +1,7 @@
 use kenken::{Puzzle, N};
 
 /// Per-cell change between two puzzle states.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CellDiff {
     /// (row, column)
     pub cell: (usize, usize),
@@ -9,7 +9,7 @@ pub struct CellDiff {
     pub added: Vec<N>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct PuzzleDiff {
     pub changes: Vec<CellDiff>,
 }

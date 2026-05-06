@@ -48,6 +48,7 @@ pub fn ContextMenu(
     state: ContextMenuState,
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     drafts: RwSignal<Vec<DraftCage>>,
     active_cage: RwSignal<Option<usize>>,
     cursor: RwSignal<(usize, usize)>,
@@ -120,7 +121,7 @@ pub fn ContextMenu(
                             })
                         });
                         if let Some(action) = action {
-                            apply_edit(set_puzzle, drafts, active_cage, action);
+                            apply_edit(set_puzzle, set_flash_diff, drafts, active_cage, action);
                             sync_active_cage(puzzle, cursor, active_cage);
                         }
                         close();
@@ -142,7 +143,7 @@ pub fn ContextMenu(
                             })
                         });
                         if let Some(action) = action {
-                            apply_edit(set_puzzle, drafts, active_cage, action);
+                            apply_edit(set_puzzle, set_flash_diff, drafts, active_cage, action);
                             sync_active_cage(puzzle, cursor, active_cage);
                         }
                         close();
@@ -164,7 +165,7 @@ pub fn ContextMenu(
                             })
                         });
                         if let Some(action) = action {
-                            apply_edit(set_puzzle, drafts, active_cage, action);
+                            apply_edit(set_puzzle, set_flash_diff, drafts, active_cage, action);
                             sync_active_cage(puzzle, cursor, active_cage);
                         }
                         close();
@@ -191,6 +192,7 @@ pub fn ContextMenu(
                                     ev.prevent_default();
                                     dispatch_edit(
                                         set_puzzle,
+                                        set_flash_diff,
                                         drafts,
                                         Box::pin(call_edit("flip_cell", FlipCellArgs {
                                             cell: (r, c),
