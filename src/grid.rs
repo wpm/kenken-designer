@@ -66,8 +66,17 @@ impl Layout {
         OP_INSET + self.op_font() + 2.0
     }
 
+    /// Side length of the cell's inner area — the cell minus a `digit_inset`
+    /// buffer on each edge — into which candidate digits are laid out.
     fn inner_extent(&self) -> f64 {
         2.0_f64.mul_add(-self.digit_inset(), self.cell).max(0.0)
+    }
+
+    /// Center of the full cell, used for the singleton (final-answer) digit.
+    /// Spans the whole cell rather than the inner area so the answer is
+    /// visually centered regardless of the operator buffer.
+    const fn singleton_center(&self, cell_x: f64, cell_y: f64) -> (f64, f64) {
+        (cell_x + self.cell / 2.0, cell_y + self.cell / 2.0)
     }
 
     const fn origin(&self, r: usize, c: usize) -> (f64, f64) {
@@ -322,7 +331,7 @@ fn render_texts(
                 };
                 for &v in candidates {
                     let (cx, cy) = if singleton {
-                        (cell_x + layout.cell / 2.0, cell_y + layout.cell / 2.0)
+                        layout.singleton_center(cell_x, cell_y)
                     } else {
                         let idx = usize::from(v.saturating_sub(1));
                         let sub_r = idx / cols;
@@ -638,13 +647,31 @@ mod tests {
     }
 
     #[test]
-    fn singleton_remains_centered() {
+    fn singleton_sits_at_geometric_center_of_cell() {
+        // Pins the invariant that the singleton (final-answer) digit is
+        // placed at the cell's geometric center — equidistant from all four
+        // cell edges — and is therefore unaffected by `digit_inset`.
         let layout = Layout::new(6, GRID_SIZE);
         let (cell_x, cell_y) = layout.origin(2, 3);
-        let cx = cell_x + layout.cell / 2.0;
-        let cy = cell_y + layout.cell / 2.0;
-        assert!((cx - (cell_x + layout.cell / 2.0)).abs() < f64::EPSILON);
-        assert!((cy - (cell_y + layout.cell / 2.0)).abs() < f64::EPSILON);
+        let (cx, cy) = layout.singleton_center(cell_x, cell_y);
+        let left = cx - cell_x;
+        let right = (cell_x + layout.cell) - cx;
+        let top = cy - cell_y;
+        let bottom = (cell_y + layout.cell) - cy;
+        assert!(
+            (left - right).abs() < 1e-9,
+            "singleton not horizontally centered: left={left}, right={right}",
+        );
+        assert!(
+            (top - bottom).abs() < 1e-9,
+            "singleton not vertically centered: top={top}, bottom={bottom}",
+        );
+        assert!(
+            left > layout.digit_inset(),
+            "singleton's gap to cell edge ({left}) should exceed digit_inset \
+             ({}) — i.e. singleton spans the full cell, not just the inner area",
+            layout.digit_inset(),
+        );
     }
 
     #[test]
