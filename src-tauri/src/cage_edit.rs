@@ -158,6 +158,11 @@ pub fn do_merge_cages(
     reinsert_or_draft(intermediate, merged, op, n)
 }
 
+pub fn do_clear_all_cages(puzzle: Puzzle) -> Puzzle {
+    let polys: Vec<_> = puzzle.cages().map(|c| c.polyomino().clone()).collect();
+    polys.iter().fold(puzzle, Puzzle::remove_cage)
+}
+
 pub fn do_flip_cell(
     puzzle: &Puzzle,
     cell: (usize, usize),

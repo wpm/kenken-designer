@@ -17,6 +17,7 @@ use wasm_bindgen::prelude::*;
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 const FILE_ACTION_EVENT: &str = "file-action";
+const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
 
 #[wasm_bindgen]
 extern "C" {
@@ -255,6 +256,7 @@ pub fn App() -> impl IntoView {
     let entry = RwSignal::new(None::<OperatorEntry>);
     let context_menu = RwSignal::new(None::<ContextMenuState>);
     let current_path = RwSignal::new(None::<String>);
+    let show_clear_modal = RwSignal::new(false);
 
     refresh_from(
         set_puzzle,
@@ -263,6 +265,7 @@ pub fn App() -> impl IntoView {
     );
     listen_for_puzzle_updates(set_puzzle, set_flash_diff);
     listen_for_file_actions(set_puzzle, set_flash_diff, current_path);
+    listen_for_clear_all_cages(show_clear_modal);
 
     let on_size_change = move |ev: Event| {
         let Ok(n) = event_target_value(&ev).parse::<usize>() else {
@@ -344,6 +347,7 @@ pub fn App() -> impl IntoView {
         entry,
         context_menu,
         current_path,
+        show_clear_modal,
     );
 
     // Single derivation that reads puzzle + active_cage once and produces both
@@ -409,6 +413,30 @@ pub fn App() -> impl IntoView {
                     />
                 }
             })}
+            {move || {
+                if !show_clear_modal.get() {
+                    return None;
+                }
+                let cage_count = puzzle.with(|opt| {
+                    opt.as_ref().map_or(0, |v| v.cages.len())
+                });
+                Some(view! {
+                    <crate::clear_all_cages_modal::ClearAllCagesModal
+                        cage_count=cage_count
+                        on_confirm=Callback::new(move |()| {
+                            show_clear_modal.set(false);
+                            refresh_from(
+                                set_puzzle,
+                                set_flash_diff,
+                                Box::pin(call("clear_all_cages", NoArgs {})),
+                            );
+                        })
+                        on_cancel=Callback::new(move |()| {
+                            show_clear_modal.set(false);
+                        })
+                    />
+                })
+            }}
             <div class="size-control">
                 <label>
                     "Size: "
@@ -439,6 +467,7 @@ fn install_keydown_handler(
     entry: RwSignal<Option<OperatorEntry>>,
     context_menu: RwSignal<Option<ContextMenuState>>,
     current_path: RwSignal<Option<String>>,
+    show_clear_modal: RwSignal<bool>,
 ) {
     window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
         if let Some(current_entry) = entry.get_untracked() {
@@ -457,6 +486,12 @@ fn install_keydown_handler(
 
         let modifier = ev.meta_key() || ev.ctrl_key();
         let key = ev.key();
+
+        if key == "Escape" && show_clear_modal.get_untracked() {
+            ev.prevent_default();
+            show_clear_modal.set(false);
+            return;
+        }
 
         if key == "Escape" && context_menu.with_untracked(Option::is_some) {
             ev.prevent_default();
@@ -669,6 +704,14 @@ fn listen_for_file_actions(
         }
     });
     let _ = listen(FILE_ACTION_EVENT, &cb);
+    cb.forget();
+}
+
+fn listen_for_clear_all_cages(show_clear_modal: RwSignal<bool>) {
+    let cb = Closure::<dyn FnMut(JsValue)>::new(move |_event: JsValue| {
+        show_clear_modal.set(true);
+    });
+    let _ = listen(CLEAR_ALL_CAGES_EVENT, &cb);
     cb.forget();
 }
 
