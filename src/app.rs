@@ -1,5 +1,7 @@
 use crate::cage_band::CageBand;
-use crate::cage_edit::{delete_at, escape_at, shift_arrow, splinter_at, CageEdit};
+use crate::cage_edit::{
+    delete_at, escape_at, legal_move_targets, shift_arrow, splinter_at, CageEdit,
+};
 use crate::cage_index::{cage_anchor, cage_at, cells_anchor};
 use crate::context_menu::{menu_items_for, ContextMenuItems, MenuContext};
 use crate::grid::Grid;
@@ -89,9 +91,20 @@ struct MergeCagesArgs {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FlipCellArgs {
+pub struct MoveCellArgs {
     pub cell: (usize, usize),
     pub target_anchor: (usize, usize),
+}
+
+/// State for the keyboard-driven move-cell mode.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MoveState {
+    /// The cell being moved.
+    pub cell: (usize, usize),
+    /// Anchor cells of legal target cages, sorted row-major.
+    pub targets: Vec<(usize, usize)>,
+    /// Index into `targets`; `None` until first Tab.
+    pub selected: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -189,6 +202,7 @@ enum KeyAction {
     Escape,
     Delete,
     Splinter,
+    MoveCell,
     Ignore,
 }
 
@@ -231,6 +245,7 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
         "Escape" => KeyAction::Escape,
         "x" | "X" => KeyAction::Delete,
         " " | "Spacebar" | "c" | "C" => KeyAction::Splinter,
+        "m" | "M" => KeyAction::MoveCell,
         _ => KeyAction::Ignore,
     }
 }
@@ -255,6 +270,7 @@ pub fn App() -> impl IntoView {
     let entry = RwSignal::new(None::<OperatorEntry>);
     let context_menu = RwSignal::new(None::<ContextMenuState>);
     let current_path = RwSignal::new(None::<String>);
+    let move_mode = RwSignal::new(None::<MoveState>);
 
     refresh_from(
         set_puzzle,
@@ -344,6 +360,7 @@ pub fn App() -> impl IntoView {
         entry,
         context_menu,
         current_path,
+        move_mode,
     );
 
     // Single derivation that reads puzzle + active_cage once and produces both
@@ -391,6 +408,7 @@ pub fn App() -> impl IntoView {
                         on_cell_right_click=on_cell_right_click
                         entry=entry.into()
                         flash_diff=flash_diff
+                        move_mode=move_mode.into()
                     />
                 })
             }}
@@ -405,6 +423,7 @@ pub fn App() -> impl IntoView {
                         active_cage=active_cage
                         cursor=cursor
                         entry=entry
+                        move_mode=move_mode
                         on_close=Callback::new(move |()| context_menu.set(None))
                     />
                 }
@@ -439,6 +458,7 @@ fn install_keydown_handler(
     entry: RwSignal<Option<OperatorEntry>>,
     context_menu: RwSignal<Option<ContextMenuState>>,
     current_path: RwSignal<Option<String>>,
+    move_mode: RwSignal<Option<MoveState>>,
 ) {
     window_event_listener(leptos::ev::keydown, move |ev: KeyboardEvent| {
         if let Some(current_entry) = entry.get_untracked() {
@@ -457,6 +477,20 @@ fn install_keydown_handler(
 
         let modifier = ev.meta_key() || ev.ctrl_key();
         let key = ev.key();
+
+        // In move mode, intercept Tab, Enter, Escape before normal dispatch.
+        if move_mode.with_untracked(Option::is_some) {
+            ev.prevent_default();
+            handle_move_mode_key(
+                set_puzzle,
+                set_flash_diff,
+                drafts,
+                move_mode,
+                &key,
+                ev.shift_key(),
+            );
+            return;
+        }
 
         if key == "Escape" && context_menu.with_untracked(Option::is_some) {
             ev.prevent_default();
@@ -558,8 +592,93 @@ fn install_keydown_handler(
                     splinter_at,
                 );
             }
+            KeyAction::MoveCell => {
+                ev.prevent_default();
+                enter_move_mode(puzzle, cursor, move_mode);
+            }
         }
     });
+}
+
+fn enter_move_mode(
+    puzzle: ReadSignal<Option<PuzzleView>>,
+    cursor: RwSignal<(usize, usize)>,
+    move_mode: RwSignal<Option<MoveState>>,
+) {
+    let cell = cursor.get_untracked();
+    let targets = puzzle.with_untracked(|opt| {
+        opt.as_ref()
+            .map_or_else(Vec::new, |v| legal_move_targets(v, cell))
+    });
+    if targets.is_empty() {
+        // Silently do nothing if no legal targets
+        return;
+    }
+    move_mode.set(Some(MoveState {
+        cell,
+        targets,
+        selected: None,
+    }));
+}
+
+fn handle_move_mode_key(
+    set_puzzle: WriteSignal<Option<PuzzleView>>,
+    set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
+    drafts: RwSignal<Vec<DraftCage>>,
+    move_mode: RwSignal<Option<MoveState>>,
+    key: &str,
+    shift: bool,
+) {
+    let Some(state) = move_mode.get_untracked() else {
+        return;
+    };
+    match key {
+        "Escape" => {
+            move_mode.set(None);
+        }
+        "Tab" => {
+            let len = state.targets.len();
+            let next_selected = if shift {
+                // Shift+Tab: decrement with wrap
+                Some(state.selected.map_or_else(
+                    || len.saturating_sub(1),
+                    |i| if i == 0 { len - 1 } else { i - 1 },
+                ))
+            } else {
+                // Tab: (selected.unwrap_or(targets.len() - 1) + 1) % targets.len()
+                Some((state.selected.unwrap_or(len - 1) + 1) % len)
+            };
+            move_mode.set(Some(MoveState {
+                cell: state.cell,
+                targets: state.targets,
+                selected: next_selected,
+            }));
+        }
+        "Enter" => {
+            if let Some(sel_idx) = state.selected {
+                let target_anchor = state.targets[sel_idx];
+                let cell = state.cell;
+                move_mode.set(None);
+                dispatch_edit(
+                    set_puzzle,
+                    set_flash_diff,
+                    drafts,
+                    Box::pin(call_edit(
+                        "move_cell",
+                        MoveCellArgs {
+                            cell,
+                            target_anchor,
+                        },
+                    )),
+                    None,
+                );
+            }
+        }
+        _ => {
+            // Any other key cancels move mode
+            move_mode.set(None);
+        }
+    }
 }
 
 /// Ask the user to pick a save path if needed, then call `save_puzzle`.

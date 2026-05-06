@@ -1,16 +1,11 @@
 use crate::app::{DraftCage, PuzzleView};
-use crate::cage_index::{cage_anchor, cage_at};
+use crate::cage_edit::legal_move_targets;
+use crate::cage_index::cage_at;
 
 pub struct MenuContext {
     pub cell: (usize, usize),
     pub view: PuzzleView,
     pub drafts: Vec<DraftCage>,
-}
-
-#[derive(Clone, Debug)]
-pub struct FlipTarget {
-    pub anchor: (usize, usize),
-    pub label: String,
 }
 
 #[derive(Clone, Debug)]
@@ -20,7 +15,7 @@ pub struct ContextMenuItems {
     pub make_singleton: bool,
     pub uncage: bool,
     pub delete_cage: bool,
-    pub adjacent_targets: Vec<FlipTarget>,
+    pub can_move: bool,
 }
 
 #[must_use]
@@ -44,58 +39,15 @@ pub fn menu_items_for(ctx: &MenuContext) -> ContextMenuItems {
         .any(|d| d.cells.len() == 1 && d.cells.contains(&(r, c)));
     let make_singleton = !is_committed_singleton && !is_singleton_draft;
 
-    let adjacent_targets = committed_idx.map_or_else(Vec::new, |src_idx| {
-        adjacent_committed_cages(&ctx.view, (r, c), src_idx)
-            .into_iter()
-            .map(|idx| {
-                let anchor = cage_anchor(&ctx.view.cages[idx]);
-                FlipTarget {
-                    anchor,
-                    label: cage_label(&ctx.view, idx),
-                }
-            })
-            .collect()
-    });
+    let can_move = !legal_move_targets(&ctx.view, (r, c)).is_empty();
 
     ContextMenuItems {
         set_operation,
         make_singleton,
         uncage,
         delete_cage,
-        adjacent_targets,
+        can_move,
     }
-}
-
-fn adjacent_committed_cages(view: &PuzzleView, cell: (usize, usize), src_idx: usize) -> Vec<usize> {
-    let (r, c) = cell;
-    let n = view.n;
-    let mut result: Vec<usize> = Vec::new();
-
-    let neighbors: &[(isize, isize)] = &[(-1, 0), (1, 0), (0, -1), (0, 1)];
-    for (dr, dc) in neighbors {
-        let Some(nr) = r.checked_add_signed(*dr) else {
-            continue;
-        };
-        let Some(nc) = c.checked_add_signed(*dc) else {
-            continue;
-        };
-        if nr >= n || nc >= n {
-            continue;
-        }
-        if let Some(idx) = cage_at(view, nr, nc) {
-            if idx != src_idx && !result.contains(&idx) {
-                result.push(idx);
-            }
-        }
-    }
-    result
-}
-
-fn cage_label(view: &PuzzleView, idx: usize) -> String {
-    view.cages.get(idx).map_or_else(String::new, |cage| {
-        let anchor = cage_anchor(cage);
-        format!("({},{})", anchor.0, anchor.1)
-    })
 }
 
 #[cfg(test)]
@@ -133,7 +85,7 @@ mod tests {
         assert!(items.make_singleton);
         assert!(!items.uncage);
         assert!(!items.delete_cage);
-        assert!(items.adjacent_targets.is_empty());
+        assert!(!items.can_move);
     }
 
     #[test]
@@ -149,7 +101,7 @@ mod tests {
         assert!(items.make_singleton);
         assert!(!items.uncage);
         assert!(!items.delete_cage);
-        assert!(items.adjacent_targets.is_empty());
+        assert!(!items.can_move);
     }
 
     #[test]
@@ -165,11 +117,12 @@ mod tests {
         assert!(!items.make_singleton);
         assert!(items.uncage);
         assert!(items.delete_cage);
-        assert!(items.adjacent_targets.is_empty());
+        // Singleton cage with no adjacent cages: can_move is false
+        assert!(!items.can_move);
     }
 
     #[test]
-    fn multi_cell_cage_adjacent_to_another_shows_full_menu() {
+    fn multi_cell_cage_adjacent_to_another_shows_can_move() {
         let v = view(3, vec![cage(&[(0, 0), (0, 1)]), cage(&[(1, 0), (1, 1)])]);
         let ctx = MenuContext {
             cell: (0, 0),
@@ -181,6 +134,6 @@ mod tests {
         assert!(items.make_singleton);
         assert!(items.uncage);
         assert!(items.delete_cage);
-        assert!(!items.adjacent_targets.is_empty());
+        assert!(items.can_move);
     }
 }

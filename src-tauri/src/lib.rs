@@ -187,6 +187,29 @@ fn flip_cell(
     })
 }
 
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn move_cell(
+    cell: (usize, usize),
+    target_anchor: (usize, usize),
+    state: State<Mutex<Session>>,
+) -> Result<EditResult, String> {
+    do_command(&state, |session| {
+        let (next, drafts) = cage_edit::do_move_cell(session.current(), cell, target_anchor)?;
+        Ok(commit_edit(session, next, drafts))
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn legal_move_targets(
+    cell: (usize, usize),
+    state: State<Mutex<Session>>,
+) -> Result<Vec<(usize, usize)>, String> {
+    let session = state.lock().map_err(|e| format!("{e:?}"))?;
+    Ok(cage_edit::legal_move_targets(session.current(), cell))
+}
+
 #[allow(clippy::too_many_lines)] // Per-OS submenu construction is the long part
 fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let pkg_info = app.package_info();
@@ -368,6 +391,8 @@ pub fn run() {
             merge_cages,
             set_cage_operation,
             flip_cell,
+            move_cell,
+            legal_move_targets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -832,6 +857,42 @@ mod tests {
         let result = flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
         assert!(result.drafts.is_empty());
         assert_eq!(result.view.cages.len(), 2);
+    }
+
+    #[test]
+    fn move_cell_command_happy_path() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let result = move_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(result.drafts.is_empty());
+        assert_eq!(result.view.cages.len(), 2);
+    }
+
+    #[test]
+    fn move_cell_command_returns_err_when_cell_not_caged() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        assert!(move_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).is_err());
     }
 
     #[test]
