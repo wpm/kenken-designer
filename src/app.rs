@@ -313,7 +313,8 @@ pub fn App() -> impl IntoView {
         if cursor.get_untracked() != (r, c) {
             cursor.set((r, c));
         }
-        let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+        let target = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+        let next_active = target.or_else(|| active_cage.get_untracked());
         if active_cage.get_untracked() != next_active {
             active_cage.set(next_active);
         }
@@ -333,7 +334,8 @@ pub fn App() -> impl IntoView {
 
     let on_cell_right_click = Callback::new(move |(r, c, x, y): (usize, usize, f64, f64)| {
         cursor.set((r, c));
-        let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+        let target = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+        let next_active = target.or_else(|| active_cage.get_untracked());
         if active_cage.get_untracked() != next_active {
             active_cage.set(next_active);
         }
@@ -1164,7 +1166,10 @@ pub fn sync_active_cage(
     active_cage: RwSignal<Option<usize>>,
 ) {
     let (r, c) = cursor.get_untracked();
-    let next_active = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+    let target = puzzle.with_untracked(|opt| opt.as_ref().and_then(|v| cage_at(v, r, c)));
+    // Preserve the prior cage when the cursor lands on an uncaged cell so the
+    // tuple strip stays put.
+    let next_active = target.or_else(|| active_cage.get_untracked());
     if active_cage.get_untracked() != next_active {
         active_cage.set(next_active);
     }
