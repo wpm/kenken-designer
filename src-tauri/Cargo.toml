@@ -22,7 +22,7 @@ tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-kenken = { git = "https://github.com/wpm/KenKen", version = ">=0.1.0" }
+kenken = { git = "https://github.com/wpm/KenKen", rev = "c678e544d8672aa834712f9d54aaf01112bd5e1c" }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
