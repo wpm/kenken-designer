@@ -26,6 +26,14 @@ pub enum OpKind {
     Given,
 }
 
+/// One operator and its valid targets for a cage shape, returned by the
+/// `cage_options` command and used to drive the operator/target picker UI.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct CageOption {
+    pub op: OpKind,
+    pub targets: Vec<u32>,
+}
+
 /// One ranked tuple entry returned by the `rank_active_cage` command.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct RankedTupleView {
