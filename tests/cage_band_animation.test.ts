@@ -12,6 +12,18 @@ function makePuzzleView() {
   return { n: N, cells, cages, diff: { changes: [] } };
 }
 
+// A 3×3 PuzzleView with two single-cell cages: (0,0) and (0,2).
+function makeTwoCagePuzzleView() {
+  const cells = Array.from({ length: N }, () =>
+    Array.from({ length: N }, () => Array.from({ length: N }, (_, i) => i + 1)),
+  );
+  const cages = [
+    { cells: [[0, 0]], op: 'Given', target: 3 },
+    { cells: [[0, 2]], op: 'Given', target: 2 },
+  ];
+  return { n: N, cells, cages, diff: { changes: [] } };
+}
+
 // Install Tauri stubs, set up `rank_active_cage` to return `tupleCount` tuples,
 // navigate to the page, and click the caged cell to activate the cage band.
 async function setupScrollableBand(page: Page, tupleCount: number) {
@@ -37,20 +49,22 @@ async function setupScrollableBand(page: Page, tupleCount: number) {
 
   await waitForApp(page);
 
-  // Click the first cell of the cage (top-left corner of the grid SVG).
-  // The SVG fills the left portion of the grid-and-band container.
-  const svg = page.locator('.grid-svg');
-  const box = await svg.boundingBox();
-  if (!box) throw new Error('grid-svg not found');
-  // Click near top-left cell center.
-  const cellSize = box.width / N;
-  await page.mouse.click(
-    box.x + cellSize * 0.5,
-    box.y + cellSize * 0.5,
-  );
+  await clickCell(page, 0, 0);
 
   // Wait for thumbnails to appear in the cage band.
   await page.waitForSelector('.cage-band__thumb', { timeout: 8000 });
+}
+
+// Click the grid cell at (row, col) by computing its position from the SVG bounds.
+async function clickCell(page: Page, row: number, col: number) {
+  const svg = page.locator('.grid-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('grid-svg not found');
+  const cellSize = box.width / N;
+  await page.mouse.click(
+    box.x + cellSize * (col + 0.5),
+    box.y + cellSize * (row + 0.5),
+  );
 }
 
 test.describe('cage band scroll animation', () => {
@@ -145,5 +159,122 @@ test.describe('cage band scroll animation', () => {
     await page.waitForTimeout(400);
     const inner = page.locator('.cage-band__strip-inner');
     await expect(inner).not.toHaveClass(/cage-band__strip--no-transition/);
+  });
+
+  test('render_extra: one extra thumb rendered during animation, gone after', async ({ page }) => {
+    await setupScrollableBand(page, 6);
+
+    // With a tall enough viewport, visible_count should be at least 1.
+    // Count thumbs at rest (should equal visible_count, not +1).
+    const restCount = await page.locator('.cage-band__thumb').count();
+    expect(restCount).toBeGreaterThanOrEqual(1);
+
+    const downBtn = page.locator('.cage-band__arrow[aria-label="Scroll down"]');
+    await downBtn.click();
+
+    // During the animation there should be one extra thumb rendered.
+    let sawExtra = false;
+    for (let i = 0; i < 30; i++) {
+      const count = await page.locator('.cage-band__thumb').count();
+      if (count > restCount) {
+        sawExtra = true;
+        break;
+      }
+      await page.waitForTimeout(10);
+    }
+    expect(sawExtra).toBe(true);
+
+    // After animation completes the count returns to the resting value.
+    await page.waitForTimeout(400);
+    const finalCount = await page.locator('.cage-band__thumb').count();
+    expect(finalCount).toBe(restCount);
+  });
+
+  test('anchor change mid-animation: strip is clean after new cage loads', async ({ page }) => {
+    // Use a puzzle with two cages so we can switch between them.
+    const view = makeTwoCagePuzzleView();
+    await installTauriStubs(page, view);
+
+    await page.addInitScript(
+      ({ puzzleView }: { puzzleView: any }) => {
+        // Return 6 tuples for any cage — enough to scroll.
+        const tuples = Array.from({ length: 6 }, (_, i) => ({
+          tuple: [i + 1],
+          view: puzzleView,
+          total_reduction: 0,
+          newly_singleton: 0,
+        }));
+        (window as any).__tauri_invoke_handlers__ = {
+          ...((window as any).__tauri_invoke_handlers__ ?? {}),
+          rank_active_cage: () => tuples,
+        };
+      },
+      { puzzleView: view },
+    );
+
+    await waitForApp(page);
+    await clickCell(page, 0, 0);
+    await page.waitForSelector('.cage-band__thumb', { timeout: 8000 });
+
+    // Start a scroll-down animation.
+    const downBtn = page.locator('.cage-band__arrow[aria-label="Scroll down"]');
+    await downBtn.click();
+
+    // Mid-animation: switch to the second cage (col 2) to cancel in-flight callbacks.
+    await clickCell(page, 0, 2);
+
+    // Wait well past the original animation timeout.
+    await page.waitForTimeout(400);
+
+    // Strip should be clean: transform at 0, no-transition class absent.
+    const inner = page.locator('.cage-band__strip-inner');
+    const transform = await inner.evaluate(
+      (el) => (el as HTMLElement).style.transform,
+    );
+    expect(transform).toBe('translateY(0px)');
+    await expect(inner).not.toHaveClass(/cage-band__strip--no-transition/);
+  });
+
+  test('prefers-reduced-motion: scroll buttons re-enable without 200ms lockout', async ({
+    page,
+  }) => {
+    // Set up stubs and navigate first, then inject the 0ms override before
+    // activating the cage so scroll_anim_ms() reads 0 when animate_scroll runs.
+    const view = makePuzzleView();
+    await installTauriStubs(page, view);
+    await page.addInitScript(
+      ({ count, puzzleView }: { count: number; puzzleView: any }) => {
+        const tuples = Array.from({ length: count }, (_, i) => ({
+          tuple: [i + 1],
+          view: puzzleView,
+          total_reduction: 0,
+          newly_singleton: 0,
+        }));
+        (window as any).__tauri_invoke_handlers__ = {
+          ...((window as any).__tauri_invoke_handlers__ ?? {}),
+          rank_active_cage: () => tuples,
+        };
+      },
+      { count: 6, puzzleView: view },
+    );
+
+    await waitForApp(page);
+
+    // Inject 0ms override now that the document exists.
+    await page.addStyleTag({
+      content: ':root { --scroll-anim-duration: 0ms !important; }',
+    });
+
+    await clickCell(page, 0, 0);
+    await page.waitForSelector('.cage-band__thumb', { timeout: 8000 });
+
+    const downBtn = page.locator('.cage-band__arrow[aria-label="Scroll down"]');
+    const upBtn = page.locator('.cage-band__arrow[aria-label="Scroll up"]');
+
+    await downBtn.click();
+
+    // With 0ms animation, the scroll-up button should become enabled well
+    // within 150ms — not locked out for the 200ms nominal duration.
+    await expect(upBtn).toBeEnabled({ timeout: 150 });
   });
 });
