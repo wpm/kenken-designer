@@ -120,10 +120,16 @@ pub fn do_insert_cage(
     if poly.is_empty() {
         return Err("cage must have at least one cell".into());
     }
-    let cage = Cage::new(n, poly, build_operation(op, target));
+    let operation = build_operation(op, target);
+    if !Cage::is_valid(poly.as_slice(), operation, n) {
+        return Err(format!(
+            "{op:?}({target}) is not a valid operation for a {}-cell cage on a {n}x{n} grid",
+            poly.len()
+        ));
+    }
     puzzle
         .clone()
-        .insert_cage(cage)
+        .insert_cage(Cage::new(n, poly, operation))
         .map_err(|e| format!("{e:?}"))
 }
 
@@ -465,6 +471,70 @@ mod tests {
             .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
             .unwrap();
         assert!(do_insert_cage(&p, &[(0, 1), (0, 2)], OpKind::Add, 5).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_subtract_on_three_cell_cage() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_insert_cage(&p, &[(0, 0), (0, 1), (0, 2)], OpKind::Sub, 1).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_divide_on_three_cell_cage() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_insert_cage(&p, &[(0, 0), (0, 1), (0, 2)], OpKind::Div, 2).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_non_given_on_singleton() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_insert_cage(&p, &[(0, 0)], OpKind::Add, 3).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_given_on_multi_cell() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_insert_cage(&p, &[(0, 0), (0, 1)], OpKind::Given, 1).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_given_value_out_of_range() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_insert_cage(&p, &[(0, 0)], OpKind::Given, 0).is_err());
+        assert!(do_insert_cage(&p, &[(0, 0)], OpKind::Given, 5).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_unreachable_add_target() {
+        // Two same-row cells can't sum to 2 (would require 1+1, forbidden by row uniqueness).
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_insert_cage(&p, &[(0, 0), (0, 1)], OpKind::Add, 2).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_unreachable_subtract_target() {
+        // On a 4x4 grid, subtraction targets max at n - 1 = 3.
+        let p = Puzzle::new(4).unwrap();
+        assert!(do_insert_cage(&p, &[(0, 0), (0, 1)], OpKind::Sub, 4).is_err());
+    }
+
+    #[test]
+    fn set_cage_operation_rejects_invalid_op_for_cage_shape() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1), (0, 2)], 6, 4))
+            .unwrap();
+        // Subtract is not legal on a 3-cell cage.
+        assert!(do_set_cage_operation(&p, (0, 0), OpKind::Sub, 1).is_err());
+    }
+
+    #[test]
+    fn set_cage_operation_rejects_unreachable_target() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap();
+        assert!(do_set_cage_operation(&p, (0, 0), OpKind::Sub, 4).is_err());
     }
 
     #[test]
