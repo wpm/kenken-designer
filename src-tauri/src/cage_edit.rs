@@ -1,6 +1,49 @@
-use kenken::{Cage, Cell, Operation, Polyomino, Puzzle};
+use kenken::{Cage, Cell, Operation, Operator, Polyomino, Puzzle};
 
-use crate::view::{DraftCage, OpKind};
+use crate::view::{CageOption, DraftCage, OpKind};
+
+const fn op_kind_of(op: Operator) -> OpKind {
+    match op {
+        Operator::Add => OpKind::Add,
+        Operator::Subtract => OpKind::Sub,
+        Operator::Multiply => OpKind::Mul,
+        Operator::Divide => OpKind::Div,
+        Operator::Given => OpKind::Given,
+    }
+}
+
+const fn target_of(op: Operation) -> u32 {
+    match op {
+        Operation::Add(t)
+        | Operation::Subtract(t)
+        | Operation::Multiply(t)
+        | Operation::Divide(t)
+        | Operation::Given(t) => t as u32,
+    }
+}
+
+/// Returns valid (operator, targets) pairs for a cage of shape `cells` on an `n`x`n` grid.
+///
+/// Wraps `Cage::valid_operators` and `Cage::valid_targets` from the kenken crate. Used by
+/// the picker UI: step 1 lists `op` values; step 2 lists `targets` for the chosen op.
+pub fn cage_options(cells: &[(usize, usize)], n: usize) -> Vec<CageOption> {
+    let Ok(n_u8) = u8::try_from(n) else {
+        return Vec::new();
+    };
+    if n_u8 == 0 {
+        return Vec::new();
+    }
+    let cells_vec: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
+    Cage::valid_operators(&cells_vec)
+        .into_iter()
+        .map(|op| CageOption {
+            op: op_kind_of(op),
+            targets: Cage::valid_targets(&cells_vec, op, n_u8)
+                .map(target_of)
+                .collect(),
+        })
+        .collect()
+}
 
 const fn op_legal_for_size(op: Operation, size: usize) -> bool {
     match op {
@@ -350,6 +393,54 @@ mod tests {
     fn op_legal_for_size_given_requires_one() {
         assert!(op_legal_for_size(Operation::Given(3), 1));
         assert!(!op_legal_for_size(Operation::Given(3), 2));
+    }
+
+    #[test]
+    fn cage_options_singleton_returns_given_with_full_value_range() {
+        let options = cage_options(&[(0, 0)], 4);
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].op, OpKind::Given);
+        assert_eq!(options[0].targets, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn cage_options_two_cells_yields_all_binary_operators() {
+        let options = cage_options(&[(0, 0), (1, 1)], 4);
+        let ops: Vec<OpKind> = options.iter().map(|o| o.op).collect();
+        assert_eq!(
+            ops,
+            vec![OpKind::Add, OpKind::Sub, OpKind::Mul, OpKind::Div]
+        );
+
+        let sub = options.iter().find(|o| o.op == OpKind::Sub).unwrap();
+        assert_eq!(sub.targets, vec![1, 2, 3]);
+        let div = options.iter().find(|o| o.op == OpKind::Div).unwrap();
+        assert_eq!(div.targets, vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn cage_options_three_cells_yields_only_commutative_operators() {
+        let options = cage_options(&[(0, 0), (0, 1), (1, 0)], 4);
+        let ops: Vec<OpKind> = options.iter().map(|o| o.op).collect();
+        assert_eq!(ops, vec![OpKind::Add, OpKind::Mul]);
+    }
+
+    #[test]
+    fn cage_options_empty_cells_returns_empty() {
+        assert!(cage_options(&[], 4).is_empty());
+    }
+
+    #[test]
+    fn cage_options_zero_n_returns_empty() {
+        assert!(cage_options(&[(0, 0)], 0).is_empty());
+    }
+
+    #[test]
+    fn cage_options_targets_are_ascending() {
+        let options = cage_options(&[(0, 0), (0, 1), (1, 0)], 5);
+        for opt in &options {
+            assert!(opt.targets.windows(2).all(|w| w[0] < w[1]));
+        }
     }
 
     #[test]

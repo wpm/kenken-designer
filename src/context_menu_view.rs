@@ -1,5 +1,6 @@
 use crate::app::{
-    apply_edit, sync_active_cage, ContextMenuState, DraftCage, MoveState, PuzzleView,
+    apply_edit, spawn_enter_picker, sync_active_cage, ContextMenuState, DraftCage, EntryTarget,
+    MoveState, PuzzleView,
 };
 use crate::cage_edit::{delete_at, escape_at, splinter_at};
 use crate::cage_index::cage_anchor;
@@ -85,24 +86,26 @@ pub fn ContextMenu(
                             opt.as_ref().and_then(|v| {
                                 crate::cage_index::cage_at(v, r, c).map(|idx| {
                                     let anchor = cage_anchor(&v.cages[idx]);
+                                    let cells = v.cages[idx].cells.clone();
                                     let cage_op = v.cages[idx].op;
                                     let cage_target = v.cages[idx].target;
-                                    (idx, anchor, cage_op, cage_target)
+                                    (idx, anchor, cells, cage_op, cage_target)
                                 })
                             })
                         });
-                        if let Some((idx, anchor, cage_op, cage_target)) = active {
+                        if let Some((idx, anchor, cells, cage_op, cage_target)) = active {
                             cursor.set(anchor);
                             active_cage.set(Some(idx));
-                            entry.set(Some(OperatorEntry {
-                                cage: ActiveCage::Committed(idx),
-                                op: Some(cage_op),
-                                digits: if cage_target > 0 {
-                                    cage_target.to_string()
-                                } else {
-                                    String::new()
+                            spawn_enter_picker(
+                                EntryTarget {
+                                    cage: ActiveCage::Committed(idx),
+                                    anchor,
+                                    cells,
+                                    current_op_target: Some((cage_op, cage_target)),
                                 },
-                            }));
+                                entry,
+                                None,
+                            );
                         }
                         close();
                     }

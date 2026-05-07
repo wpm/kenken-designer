@@ -14,7 +14,7 @@ use tauri::menu::{
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use session::Session;
-use view::{DraftCage, EditResult, OpKind, PuzzleView, RankedTupleView};
+use view::{CageOption, DraftCage, EditResult, OpKind, PuzzleView, RankedTupleView};
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
@@ -222,6 +222,16 @@ fn legal_move_targets(
 ) -> Result<Vec<(usize, usize)>, String> {
     let session = state.lock().map_err(|e| format!("{e:?}"))?;
     Ok(cage_edit::legal_move_targets(session.current(), cell))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn cage_options(
+    cells: Vec<(usize, usize)>,
+    state: State<Mutex<Session>>,
+) -> Result<Vec<CageOption>, String> {
+    let session = state.lock().map_err(|e| format!("{e:?}"))?;
+    Ok(cage_edit::cage_options(&cells, session.current().n()))
 }
 
 #[tauri::command]
@@ -475,6 +485,7 @@ pub fn run() {
             flip_cell,
             move_cell,
             legal_move_targets,
+            cage_options,
             clear_all_cages,
             rank_active_cage,
             apply_narrowing,
