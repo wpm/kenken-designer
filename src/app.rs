@@ -216,6 +216,7 @@ enum KeyAction {
     Delete,
     Splinter,
     MoveCell,
+    ClearAllCages,
     Ignore,
 }
 
@@ -239,6 +240,10 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
     }
     if modifier && key.eq_ignore_ascii_case("o") {
         return KeyAction::Open;
+    }
+    // macOS browsers report the standard Delete key as "Backspace".
+    if modifier && shift && (key == "Delete" || key == "Backspace") {
+        return KeyAction::ClearAllCages;
     }
     if modifier {
         return KeyAction::Ignore;
@@ -653,6 +658,10 @@ fn install_keydown_handler(
             KeyAction::MoveCell => {
                 ev.prevent_default();
                 enter_move_mode(puzzle, cursor, move_mode);
+            }
+            KeyAction::ClearAllCages => {
+                ev.prevent_default();
+                show_clear_modal.set(true);
             }
         }
     });
@@ -1425,5 +1434,38 @@ mod tests {
         assert!(!is_band_owned_key(" "));
         assert!(!is_band_owned_key("a"));
         assert!(!is_band_owned_key(""));
+    }
+
+    #[test]
+    fn dispatch_key_returns_clear_all_for_modifier_shift_delete() {
+        assert_eq!(
+            dispatch_key("Delete", true, true, false),
+            KeyAction::ClearAllCages
+        );
+        assert_eq!(
+            dispatch_key("Backspace", true, true, false),
+            KeyAction::ClearAllCages
+        );
+    }
+
+    #[test]
+    fn dispatch_key_ignores_clear_all_keys_without_shift() {
+        assert_eq!(
+            dispatch_key("Delete", false, true, false),
+            KeyAction::Ignore
+        );
+        assert_eq!(
+            dispatch_key("Backspace", false, true, false),
+            KeyAction::Ignore
+        );
+    }
+
+    #[test]
+    fn dispatch_key_ignores_clear_all_when_text_input_focused() {
+        assert_eq!(dispatch_key("Delete", true, true, true), KeyAction::Ignore);
+        assert_eq!(
+            dispatch_key("Backspace", true, true, true),
+            KeyAction::Ignore
+        );
     }
 }
