@@ -404,6 +404,7 @@ pub fn App() -> impl IntoView {
     let on_band_commit = Callback::new(move |view: PuzzleView| {
         set_view(set_puzzle, set_flash_diff, view);
     });
+    let tuple_count = RwSignal::new(0_usize);
 
     view! {
         <main class="app-main">
@@ -430,6 +431,7 @@ pub fn App() -> impl IntoView {
                     active_cage_anchor=active_cage_anchor
                     active_cage_cells=active_cage_cells
                     on_commit=on_band_commit
+                    tuple_count=tuple_count
                 />
             </div>
             {move || context_menu.get().map(|state| {
@@ -472,10 +474,11 @@ pub fn App() -> impl IntoView {
                     />
                 })
             }}
-            <div class="size-control">
-                <label>
-                    "Size: "
-                    <select on:change=on_size_change prop:value=current_n>
+            <div class="bottom-controls">
+                <div class="size-control">
+                    <label>
+                        "Size: "
+                        <select on:change=on_size_change prop:value=current_n>
                         <option value="2">"2"</option>
                         <option value="3">"3"</option>
                         <option value="4">"4"</option>
@@ -486,6 +489,13 @@ pub fn App() -> impl IntoView {
                         <option value="9">"9"</option>
                     </select>
                 </label>
+                </div>
+                {move || {
+                    let n = tuple_count.get();
+                    (n > 0).then(|| view! {
+                        <div class="cage-band__count">{crate::cage_band::tuple_count_label(n)}</div>
+                    })
+                }}
             </div>
         </main>
     }
