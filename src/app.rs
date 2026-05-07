@@ -569,8 +569,9 @@ fn install_keydown_handler(
             return;
         }
 
+        // Allow shift_key when the produced key is itself an entry trigger (e.g. '+' = Shift+=).
         if !modifier
-            && !ev.shift_key()
+            && (!ev.shift_key() || is_entry_trigger_key(&key))
             && !is_text_input_focused()
             && try_enter_entry_with_key(puzzle, cursor, drafts, entry, &key)
         {
