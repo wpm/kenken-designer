@@ -122,7 +122,7 @@ const fn arrow_up_target(focused: usize, scroll: usize) -> Option<(usize, usize)
 }
 
 /// "N Tuple"/"N Tuples" caption with English pluralization.
-fn tuple_count_label(count: usize) -> String {
+pub fn tuple_count_label(count: usize) -> String {
     if count == 1 {
         "1 Tuple".to_string()
     } else {
@@ -415,6 +415,8 @@ pub fn CageBand(
     active_cage_cells: Signal<Vec<(usize, usize)>>,
     /// Callback invoked with the post-narrow PuzzleView when the user commits a tuple.
     on_commit: Callback<PuzzleView>,
+    /// Written with the current ranked-tuple count so the caller can display it outside the band.
+    tuple_count: RwSignal<usize>,
 ) -> impl IntoView {
     let ranked = RwSignal::new(Vec::<RankedTuple>::new());
     let ranked_len = Memo::new(move |_| ranked.with(Vec::len));
@@ -460,6 +462,10 @@ pub fn CageBand(
         if off > max_off {
             scroll_offset.set(max_off);
         }
+    });
+
+    Effect::new(move |_| {
+        tuple_count.set(ranked_len.get());
     });
 
     let can_scroll_up = move || can_scroll_up_at(scroll_offset.get());
@@ -601,10 +607,6 @@ pub fn CageBand(
                     }.into_any()
                 }}
             </div>
-            {move || {
-                let n = ranked_len.get();
-                (n > 0).then(|| view! { <div class="cage-band__count">{tuple_count_label(n)}</div> })
-            }}
             <button
                 class="cage-band__arrow"
                 disabled=move || !can_scroll_down()

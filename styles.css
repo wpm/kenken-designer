@@ -108,11 +108,21 @@ a:hover {
   aspect-ratio: 1 / 1;
 }
 
+.bottom-controls {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  max-width: calc(100vw - 3rem);
+  /* Mirror the grid-and-band centering: the grid is offset left by the band
+     column, so we reserve the same gutter on the right so this row matches. */
+  padding-right: var(--cage-band-gutter);
+  box-sizing: border-box;
+}
+
 .size-control {
   color: var(--paper-ink);
-  /* Asymmetric margin shifts the control left of page-center to align with
-     the grid, which itself is offset left by the cage-band column. */
-  margin-right: var(--cage-band-gutter);
 }
 
 /* ── Cage band ─────────────────────────────────────────────────── */
