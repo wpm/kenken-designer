@@ -59,13 +59,7 @@ async fn call_apply_narrowing(anchor: (usize, usize), tuple: Vec<u32>) -> Option
 const THUMB_SIZE: u32 = 168;
 /// Gap between thumbnails.
 const THUMB_GAP: u32 = 8;
-/// Pixel height of the per-thumbnail tuple-count caption. Must match the
-/// fixed height applied to `.cage-band__count` in `styles.css`; if either
-/// changes, the strip will mis-measure how many thumbs fit.
-const THUMB_LABEL_HEIGHT: u32 = 18;
-
-/// Total height each thumbnail entry (svg + caption) occupies including gap.
-const THUMB_STEP: u32 = THUMB_SIZE + THUMB_LABEL_HEIGHT + THUMB_GAP;
+const THUMB_STEP: u32 = THUMB_SIZE + THUMB_GAP;
 
 /// Conservative fallback for visible-thumbnail count when the strip element
 /// has not yet been measured (e.g. the first render). `fits_in_strip` will
@@ -423,6 +417,7 @@ pub fn CageBand(
     on_commit: Callback<PuzzleView>,
 ) -> impl IntoView {
     let ranked = RwSignal::new(Vec::<RankedTuple>::new());
+    let ranked_len = Memo::new(move |_| ranked.with(Vec::len));
     let selected_idx = RwSignal::new(None::<usize>);
     let scroll_offset = RwSignal::new(0_usize);
     let visible_count = RwSignal::new(DEFAULT_VISIBLE_COUNT);
@@ -569,7 +564,7 @@ pub fn CageBand(
                     let cells = active_cage_cells.get();
                     let off = scroll_offset.get();
                     let vis = visible_count.get();
-                    let label = tuple_count_label(rs.len());
+                    let _label = tuple_count_label(rs.len());
                     let visible_items: Vec<_> = rs
                         .into_iter()
                         .enumerate()
@@ -582,27 +577,23 @@ pub fn CageBand(
                             key=|(i, _)| *i
                             children=move |(i, rt)| {
                                 let cells_clone = cells.clone();
-                                let label_clone = label.clone();
                                 let is_selected = move || selected_idx.get() == Some(i);
                                 view! {
-                                    <div class="cage-band__entry">
-                                        <div
-                                            class="cage-band__thumb"
-                                            class:cage-band__thumb--selected=is_selected
-                                            tabindex="0"
-                                            attr:data-thumb-idx=i.to_string()
-                                            on:focus=move |_| {
-                                                if selected_idx.get_untracked() != Some(i) {
-                                                    selected_idx.set(Some(i));
-                                                }
+                                    <div
+                                        class="cage-band__thumb"
+                                        class:cage-band__thumb--selected=is_selected
+                                        tabindex="0"
+                                        attr:data-thumb-idx=i.to_string()
+                                        on:focus=move |_| {
+                                            if selected_idx.get_untracked() != Some(i) {
+                                                selected_idx.set(Some(i));
                                             }
-                                        >
-                                            <Thumbnail
-                                                rt=rt
-                                                active_cells=cells_clone
-                                            />
-                                        </div>
-                                        <div class="cage-band__count">{label_clone}</div>
+                                        }
+                                    >
+                                        <Thumbnail
+                                            rt=rt
+                                            active_cells=cells_clone
+                                        />
                                     </div>
                                 }
                             }
@@ -610,6 +601,10 @@ pub fn CageBand(
                     }.into_any()
                 }}
             </div>
+            {move || {
+                let n = ranked_len.get();
+                (n > 0).then(|| view! { <div class="cage-band__count">{tuple_count_label(n)}</div> })
+            }}
             <button
                 class="cage-band__arrow"
                 disabled=move || !can_scroll_down()
