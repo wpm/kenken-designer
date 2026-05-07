@@ -16,16 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Checkout kenken library
-        uses: actions/checkout@v6
-        with:
-          repository: wpm/KenKen
-          path: kenken-lib
-
-      - name: Point kenken path dep to checked-out library
-        run: |
-          sed -i 's|kenken = { path = "../../kenken" }|kenken = { path = "../kenken-lib" }|' src-tauri/Cargo.toml
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -124,18 +114,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Checkout kenken library
-        uses: actions/checkout@v6
-        with:
-          repository: wpm/KenKen
-          path: kenken-lib
-
-      - name: Point kenken path dep to checked-out library
-        shell: bash
-        run: |
-          sed -i.bak 's|kenken = { path = "../../kenken" }|kenken = { path = "../kenken-lib" }|' src-tauri/Cargo.toml
-          rm src-tauri/Cargo.toml.bak
 
       - uses: dtolnay/rust-toolchain@stable
         with:
