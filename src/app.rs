@@ -1,4 +1,4 @@
-use crate::cage_band::CageBand;
+use crate::cage_band::{self, CageBand};
 use crate::cage_edit::{
     delete_at, escape_at, legal_move_targets, shift_arrow, splinter_at, CageEdit,
 };
@@ -191,6 +191,16 @@ const fn is_text_input_tag(tag: &str) -> bool {
     tag.as_bytes().eq_ignore_ascii_case(b"INPUT")
         || tag.as_bytes().eq_ignore_ascii_case(b"TEXTAREA")
         || tag.as_bytes().eq_ignore_ascii_case(b"SELECT")
+}
+
+/// Keys the cage band's local keydown handler owns when a thumb has focus —
+/// the global dispatcher must defer to it so the same press doesn't also
+/// move the grid cursor or open operator entry.
+const fn is_band_owned_key(key: &str) -> bool {
+    matches!(
+        key.as_bytes(),
+        b"ArrowUp" | b"ArrowDown" | b"Enter" | b"Escape"
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -497,6 +507,7 @@ fn install_keydown_handler(
                 set_puzzle,
                 set_flash_diff,
                 drafts,
+                active_cage,
                 entry,
                 current_entry,
                 &ev.key(),
@@ -506,6 +517,10 @@ fn install_keydown_handler(
 
         let modifier = ev.meta_key() || ev.ctrl_key();
         let key = ev.key();
+
+        if !modifier && is_band_owned_key(&key) && cage_band::focused_thumb_idx().is_some() {
+            return;
+        }
 
         if move_mode.with_untracked(Option::is_some) {
             ev.prevent_default();
@@ -840,11 +855,13 @@ fn listen_for_clear_all_cages(show_clear_modal: RwSignal<bool>) {
     cb.forget();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_entry_key(
     puzzle: ReadSignal<Option<PuzzleView>>,
     set_puzzle: WriteSignal<Option<PuzzleView>>,
     set_flash_diff: WriteSignal<crate::diff::PuzzleDiff>,
     drafts: RwSignal<Vec<DraftCage>>,
+    active_cage: RwSignal<Option<usize>>,
     entry: RwSignal<Option<OperatorEntry>>,
     current_entry: OperatorEntry,
     key: &str,
@@ -866,6 +883,7 @@ fn handle_entry_key(
                 let cells = drafts
                     .with_untracked(|ds| ds.first().map(|d| d.cells.clone()).unwrap_or_default());
                 let remaining_drafts = drafts.with_untracked(|ds| ds[1..].to_vec());
+                let anchor = cells_anchor(&cells);
                 refresh_from_then(
                     set_puzzle,
                     set_flash_diff,
@@ -873,6 +891,7 @@ fn handle_entry_key(
                     move || {
                         set_drafts_if_changed(drafts, remaining_drafts);
                         entry.set(None);
+                        set_active_cage_for_cell(puzzle, active_cage, anchor.0, anchor.1);
                     },
                 );
             }
@@ -888,7 +907,10 @@ fn handle_entry_key(
                         "set_cage_operation",
                         SetCageOperationArgs { anchor, op, target },
                     )),
-                    move || entry.set(None),
+                    move || {
+                        entry.set(None);
+                        set_active_cage_for_cell(puzzle, active_cage, anchor.0, anchor.1);
+                    },
                 );
             }
         },
@@ -1385,5 +1407,23 @@ mod tests {
     fn dispatch_key_ignores_file_keys_when_text_input_focused() {
         assert_eq!(dispatch_key("s", false, true, true), KeyAction::Ignore);
         assert_eq!(dispatch_key("o", false, true, true), KeyAction::Ignore);
+    }
+
+    #[test]
+    fn is_band_owned_key_matches_arrow_enter_escape() {
+        assert!(is_band_owned_key("ArrowUp"));
+        assert!(is_band_owned_key("ArrowDown"));
+        assert!(is_band_owned_key("Enter"));
+        assert!(is_band_owned_key("Escape"));
+    }
+
+    #[test]
+    fn is_band_owned_key_rejects_other_keys() {
+        assert!(!is_band_owned_key("ArrowLeft"));
+        assert!(!is_band_owned_key("ArrowRight"));
+        assert!(!is_band_owned_key("Tab"));
+        assert!(!is_band_owned_key(" "));
+        assert!(!is_band_owned_key("a"));
+        assert!(!is_band_owned_key(""));
     }
 }

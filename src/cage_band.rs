@@ -59,9 +59,13 @@ async fn call_apply_narrowing(anchor: (usize, usize), tuple: Vec<u32>) -> Option
 const THUMB_SIZE: u32 = 168;
 /// Gap between thumbnails.
 const THUMB_GAP: u32 = 8;
+/// Pixel height of the per-thumbnail tuple-count caption. Must match the
+/// fixed height applied to `.cage-band__count` in `styles.css`; if either
+/// changes, the strip will mis-measure how many thumbs fit.
+const THUMB_LABEL_HEIGHT: u32 = 18;
 
-/// Total height each thumbnail occupies including gap.
-const THUMB_STEP: u32 = THUMB_SIZE + THUMB_GAP;
+/// Total height each thumbnail entry (svg + caption) occupies including gap.
+const THUMB_STEP: u32 = THUMB_SIZE + THUMB_LABEL_HEIGHT + THUMB_GAP;
 
 /// Conservative fallback for visible-thumbnail count when the strip element
 /// has not yet been measured (e.g. the first render). `fits_in_strip` will
@@ -121,6 +125,15 @@ const fn arrow_up_target(focused: usize, scroll: usize) -> Option<(usize, usize)
         scroll
     };
     Some((new_focused, new_scroll))
+}
+
+/// "N Tuple"/"N Tuples" caption with English pluralization.
+fn tuple_count_label(count: usize) -> String {
+    if count == 1 {
+        "1 Tuple".to_string()
+    } else {
+        format!("{count} Tuples")
+    }
 }
 
 /// Compute the new (`focused`, `scroll_offset`) after pressing `ArrowDown`
@@ -350,7 +363,10 @@ fn Thumbnail(rt: RankedTuple, active_cells: Vec<(usize, usize)>) -> impl IntoVie
 
 // ─── DOM helpers ─────────────────────────────────────────────────────────────
 
-fn focused_thumb_idx() -> Option<usize> {
+/// Index of the focused thumbnail, if any. Used by both the band's local
+/// keydown handler and the global window handler in `app.rs` to detect when
+/// keys should be owned by the band.
+pub fn focused_thumb_idx() -> Option<usize> {
     let win = web_sys::window()?;
     let doc = win.document()?;
     let active = doc.active_element()?;
@@ -391,9 +407,11 @@ fn blur_active() {
 
 /// Vertical strip on the right side of the grid showing narrowing previews for the active cage.
 ///
-/// When `active_cage_anchor` is `None`, collapses to a 4px placeholder bar.
-/// When a cage is active, loads ranked tuples from the backend and renders
-/// thumbnail previews with up/down scrolling and Enter-to-commit.
+/// Always renders an outlined column reserving the same horizontal slot in
+/// the layout: when `active_cage_anchor` is `None` (or no tuples are ranked
+/// yet) the strip shows a `"0 Tuples"` caption; when a cage is active it
+/// loads ranked tuples from the backend and renders thumbnail previews with
+/// up/down scrolling and Enter-to-commit.
 #[component]
 #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 pub fn CageBand(
@@ -448,8 +466,6 @@ pub fn CageBand(
             scroll_offset.set(max_off);
         }
     });
-
-    let is_active = move || active_cage_anchor.get().is_some();
 
     let can_scroll_up = move || can_scroll_up_at(scroll_offset.get());
     let can_scroll_down = move || {
@@ -533,73 +549,75 @@ pub fn CageBand(
     };
 
     view! {
-        <div
-            class="cage-band"
-            class:cage-band--active=is_active
-            class:cage-band--collapsed=move || !is_active()
-            on:keydown=on_keydown
-        >
-            {move || {
-                if !is_active() {
-                    return view! { <div class="cage-band__placeholder" /> }.into_any();
-                }
-                let rs = ranked.get();
-                let cells = active_cage_cells.get();
-                let off = scroll_offset.get();
-                let vis = visible_count.get();
-                let visible_items: Vec<_> = rs
-                    .into_iter()
-                    .enumerate()
-                    .skip(off)
-                    .take(vis)
-                    .collect();
-                view! {
-                    <button
-                        class="cage-band__arrow"
-                        disabled=move || !can_scroll_up()
-                        on:click=on_up
-                        aria-label="Scroll up"
-                    >
-                        "▲"
-                    </button>
-                    <div class="cage-band__strip" node_ref=strip_ref>
+        <div class="cage-band" on:keydown=on_keydown>
+            <button
+                class="cage-band__arrow"
+                disabled=move || !can_scroll_up()
+                on:click=on_up
+                aria-label="Scroll up"
+            >
+                "▲"
+            </button>
+            <div class="cage-band__strip" node_ref=strip_ref>
+                {move || {
+                    let rs = ranked.get();
+                    if rs.is_empty() {
+                        return view! {
+                            <div class="cage-band__empty">{tuple_count_label(0)}</div>
+                        }.into_any();
+                    }
+                    let cells = active_cage_cells.get();
+                    let off = scroll_offset.get();
+                    let vis = visible_count.get();
+                    let label = tuple_count_label(rs.len());
+                    let visible_items: Vec<_> = rs
+                        .into_iter()
+                        .enumerate()
+                        .skip(off)
+                        .take(vis)
+                        .collect();
+                    view! {
                         <For
                             each=move || visible_items.clone()
                             key=|(i, _)| *i
                             children=move |(i, rt)| {
                                 let cells_clone = cells.clone();
+                                let label_clone = label.clone();
                                 let is_selected = move || selected_idx.get() == Some(i);
                                 view! {
-                                    <div
-                                        class="cage-band__thumb"
-                                        class:cage-band__thumb--selected=is_selected
-                                        tabindex="0"
-                                        attr:data-thumb-idx=i.to_string()
-                                        on:focus=move |_| {
-                                            if selected_idx.get_untracked() != Some(i) {
-                                                selected_idx.set(Some(i));
+                                    <div class="cage-band__entry">
+                                        <div
+                                            class="cage-band__thumb"
+                                            class:cage-band__thumb--selected=is_selected
+                                            tabindex="0"
+                                            attr:data-thumb-idx=i.to_string()
+                                            on:focus=move |_| {
+                                                if selected_idx.get_untracked() != Some(i) {
+                                                    selected_idx.set(Some(i));
+                                                }
                                             }
-                                        }
-                                    >
-                                        <Thumbnail
-                                            rt=rt
-                                            active_cells=cells_clone
-                                        />
+                                        >
+                                            <Thumbnail
+                                                rt=rt
+                                                active_cells=cells_clone
+                                            />
+                                        </div>
+                                        <div class="cage-band__count">{label_clone}</div>
                                     </div>
                                 }
                             }
                         />
-                    </div>
-                    <button
-                        class="cage-band__arrow"
-                        disabled=move || !can_scroll_down()
-                        on:click=on_down
-                        aria-label="Scroll down"
-                    >
-                        "▼"
-                    </button>
-                }.into_any()
-            }}
+                    }.into_any()
+                }}
+            </div>
+            <button
+                class="cage-band__arrow"
+                disabled=move || !can_scroll_down()
+                on:click=on_down
+                aria-label="Scroll down"
+            >
+                "▼"
+            </button>
         </div>
     }
 }
@@ -721,5 +739,22 @@ mod tests {
     fn arrow_down_target_does_not_scroll_past_end() {
         // Focus 8 with scroll 6, visible 3; new_focused 9 is last; scroll stays.
         assert_eq!(arrow_down_target(8, 6, 3, 10), Some((9, 7)));
+    }
+
+    #[test]
+    fn tuple_count_label_singular_for_one() {
+        assert_eq!(tuple_count_label(1), "1 Tuple");
+    }
+
+    #[test]
+    fn tuple_count_label_plural_for_zero() {
+        assert_eq!(tuple_count_label(0), "0 Tuples");
+    }
+
+    #[test]
+    fn tuple_count_label_plural_for_many() {
+        assert_eq!(tuple_count_label(2), "2 Tuples");
+        assert_eq!(tuple_count_label(7), "7 Tuples");
+        assert_eq!(tuple_count_label(100), "100 Tuples");
     }
 }

@@ -117,17 +117,14 @@ a:hover {
 
 /* ── Cage band ─────────────────────────────────────────────────── */
 
-/* Reserves a fixed column so the layout doesn't shift when band appears/hides. */
+/* Reserves a fixed column so the layout doesn't shift when the band toggles
+   between empty and populated. */
 .cage-band {
   width: var(--cage-band-width);
   flex-shrink: 0;
   box-sizing: border-box;
   outline: none;
   align-self: stretch;
-}
-
-
-.cage-band--active {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -149,6 +146,13 @@ a:hover {
   width: 100%;
 }
 
+.cage-band__entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .cage-band__thumb {
   display: block;
   flex-shrink: 0;
@@ -164,6 +168,24 @@ a:hover {
 .cage-band__thumb:focus,
 .cage-band__thumb--selected {
   box-shadow: 0 0 0 2.5px var(--paper-accent);
+}
+
+/* Height pinned so cage_band.rs THUMB_LABEL_HEIGHT can compute thumb steps
+   without measuring DOM. */
+.cage-band__count {
+  height: 18px;
+  font-size: 0.75rem;
+  line-height: 18px;
+  color: var(--paper-ink-3);
+}
+
+.cage-band__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--paper-ink-3);
+  font-size: 0.85rem;
 }
 
 .cage-band__arrow {
@@ -183,12 +205,6 @@ a:hover {
   cursor: default;
   border-color: var(--paper-line);
   color: var(--paper-ink-3);
-}
-
-.cage-band__placeholder {
-  width: 100%;
-  height: 100%;
-  border-radius: 2px;
 }
 
 /* Flash overlay animations */
