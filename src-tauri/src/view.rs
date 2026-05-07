@@ -1,4 +1,4 @@
-use kenken::{Operation, Puzzle};
+use kenken::{Operation, Puzzle, Values};
 
 use crate::diff::PuzzleDiff;
 
@@ -76,6 +76,17 @@ impl From<&Puzzle> for PuzzleView {
         let mut cells = vec![vec![Vec::new(); n]; n];
         for (cell, values) in p.grid().iter_with_values() {
             cells[cell.row][cell.column] = values.iter().collect();
+        }
+
+        // Issue #58: keep the main-grid candidate display in sync with the
+        // cage strip's tuple data even when the puzzle hasn't been propagated.
+        for cage in p.cages() {
+            let tuples = cage.tuples();
+            for (pos, cell) in cage.cells().iter().enumerate() {
+                let allowed: Values = tuples.iter().map(|t| t[pos]).collect();
+                let current: Values = cells[cell.row][cell.column].iter().copied().collect();
+                cells[cell.row][cell.column] = (current & allowed).iter().collect();
+            }
         }
 
         let mut cages: Vec<CageView> = p
@@ -205,5 +216,33 @@ mod tests {
                 assert_eq!(cell, &vec![1, 2, 3, 4]);
             }
         }
+    }
+
+    /// Issue #58: even when a cage was inserted into a puzzle that has not been
+    /// propagated, the view's per-cell candidates must already reflect the
+    /// cage's surviving tuple set. Without the explicit cage-tuple filter in
+    /// `PuzzleView::from`, the view would faithfully copy the unpropagated
+    /// grid (full domains in every cage cell) and the main grid would show
+    /// values that no surviving tuple uses.
+    #[test]
+    fn cage_cells_reflect_tuple_filter_without_propagation() {
+        let p = Puzzle::new(4).unwrap();
+        let cage = Cage::new(
+            4,
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]),
+            Operation::Add(6),
+        );
+        // Insert without calling `propagate_fully`: the puzzle's grid still
+        // holds the full domain {1,2,3,4} for every cell, including the cage
+        // cells. Only the explicit filter in PuzzleView::from narrows them.
+        let p = p.insert_cage(cage).unwrap();
+
+        let v = PuzzleView::from(&p);
+        // Surviving tuples are the 6 permutations of (1,2,3); no tuple uses 4.
+        assert_eq!(v.cells[0][0], vec![1, 2, 3]);
+        assert_eq!(v.cells[0][1], vec![1, 2, 3]);
+        assert_eq!(v.cells[0][2], vec![1, 2, 3]);
+        // Non-cage cells are unaffected.
+        assert_eq!(v.cells[0][3], vec![1, 2, 3, 4]);
     }
 }

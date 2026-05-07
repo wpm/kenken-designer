@@ -1293,6 +1293,43 @@ mod tests {
         assert!(apply_narrowing((0, 0), vec![1, 2], app.state::<Mutex<Session>>()).is_err());
     }
 
+    /// Issue #58: an L-shaped 6+ cage's corner cell shares both a row and a
+    /// column with another cage cell, so the surviving tuples include
+    /// (4,1,1) at the corner — the row peer and column peer don't share a
+    /// row or column, so they're free to repeat the same value.
+    #[test]
+    fn main_grid_candidates_reflect_cage_all_different_for_l_shape() {
+        let app = empty_session_app(4);
+        let view = insert_cage(
+            vec![(0, 0), (0, 1), (1, 0)],
+            OpKind::Add,
+            6,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        assert_eq!(view.cells[0][0], vec![1, 2, 3, 4]);
+        assert_eq!(view.cells[0][1], vec![1, 2, 3]);
+        assert_eq!(view.cells[1][0], vec![1, 2, 3]);
+    }
+
+    /// Issue #58: a straight 3-cell cage forces all three cells into the
+    /// same row group, so every surviving 6+ tuple is a permutation of
+    /// (1,2,3) and 4 is not a candidate anywhere in the cage.
+    #[test]
+    fn main_grid_candidates_reflect_cage_all_different_for_horizontal_triple() {
+        let app = empty_session_app(4);
+        let view = insert_cage(
+            vec![(0, 0), (0, 1), (0, 2)],
+            OpKind::Add,
+            6,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        assert_eq!(view.cells[0][0], vec![1, 2, 3]);
+        assert_eq!(view.cells[0][1], vec![1, 2, 3]);
+        assert_eq!(view.cells[0][2], vec![1, 2, 3]);
+    }
+
     #[test]
     fn apply_narrowing_returns_err_when_tuple_length_mismatches_cage() {
         let app = empty_session_app(3);
