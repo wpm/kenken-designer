@@ -13,11 +13,11 @@ const fn op_legal_for_size(op: Operation, size: usize) -> bool {
 #[allow(clippy::cast_possible_truncation)]
 pub const fn build_operation(op: OpKind, target: u32) -> Operation {
     match op {
-        OpKind::Add => Operation::Add(target as u8),
-        OpKind::Sub => Operation::Subtract(target as u8),
+        OpKind::Add => Operation::Add(target as u16),
+        OpKind::Sub => Operation::Subtract(target as u16),
         OpKind::Mul => Operation::Multiply(target as u16),
-        OpKind::Div => Operation::Divide(target as u8),
-        OpKind::Given => Operation::Given(target as u8),
+        OpKind::Div => Operation::Divide(target as u16),
+        OpKind::Given => Operation::Given(target as u16),
     }
 }
 
@@ -313,17 +313,17 @@ mod tests {
     use super::*;
     use kenken::{Cage, Operation, Polyomino};
 
-    fn add_cage(cells: &[(usize, usize)], target: u8, n: u8) -> Cage {
+    fn add_cage(cells: &[(usize, usize)], target: u16, n: u8) -> Cage {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
         Cage::new(n, Polyomino::new(&cells), Operation::Add(target))
     }
 
-    fn sub_cage(cells: &[(usize, usize)], target: u8, n: u8) -> Cage {
+    fn sub_cage(cells: &[(usize, usize)], target: u16, n: u8) -> Cage {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
         Cage::new(n, Polyomino::new(&cells), Operation::Subtract(target))
     }
 
-    fn given_cage(cell: (usize, usize), value: u8, n: u8) -> Cage {
+    fn given_cage(cell: (usize, usize), value: u16, n: u8) -> Cage {
         let cells = vec![Cell::new(cell.0, cell.1)];
         Cage::new(n, Polyomino::new(&cells), Operation::Given(value))
     }

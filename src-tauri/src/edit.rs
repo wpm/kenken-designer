@@ -45,7 +45,7 @@ mod tests {
     use super::*;
     use kenken::{Cage, Cell, Operation, Polyomino, Puzzle};
 
-    fn given_cage_at(cell: (usize, usize), value: u8, n: u8) -> Cage {
+    fn given_cage_at(cell: (usize, usize), value: u16, n: u8) -> Cage {
         let cells = vec![Cell::new(cell.0, cell.1)];
         Cage::new(n, Polyomino::new(&cells), Operation::Given(value))
     }
