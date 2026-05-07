@@ -70,9 +70,36 @@ const DEFAULT_VISIBLE_COUNT: usize = 1;
 /// CSS class prefix used to identify thumbnails by index for focus targeting.
 const THUMB_IDX_CLASS_PREFIX: &str = "cage-band__thumb--idx-";
 
-/// Duration of the slot-machine scroll animation in milliseconds.
-/// Must match `--scroll-anim-duration` in styles.css.
-const SCROLL_ANIM_MS: u32 = 200;
+/// Nominal scroll animation duration. The actual wait honours
+/// `prefers-reduced-motion` by reading `--scroll-anim-duration` from the
+/// document root at runtime; if that resolves to 0ms this returns 0.
+const SCROLL_ANIM_MS_NOMINAL: u32 = 200;
+
+/// Read the effective `--scroll-anim-duration` from the document root (in ms).
+/// Falls back to `SCROLL_ANIM_MS_NOMINAL` if the CSS variable is unavailable.
+fn scroll_anim_ms() -> u32 {
+    let raw = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+        .map(|el| {
+            web_sys::window()
+                .unwrap()
+                .get_computed_style(&el)
+                .ok()
+                .flatten()
+                .map(|s| {
+                    s.get_property_value("--scroll-anim-duration")
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    // CSS value is e.g. " 200ms" or " 0ms"
+    raw.trim()
+        .trim_end_matches("ms")
+        .parse::<u32>()
+        .unwrap_or(SCROLL_ANIM_MS_NOMINAL)
+}
 
 thread_local! {
     static FOCUSED_THUMB: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
@@ -532,17 +559,27 @@ pub fn CageBand(
 
         is_animating.set(true);
         let gen = anim_gen.get_untracked();
+        #[allow(clippy::cast_possible_wrap)] // THUMB_STEP is a small layout constant
+        let neg_step = -(THUMB_STEP as i32);
 
         if direction < 0 {
             // Scrolling up: render from new_off (one item earlier) and start the
             // strip translated up by one step. Two rAFs are needed: the first
             // lets the browser commit the snapped -THUMB_STEP position, the
             // second starts the CSS transition sliding back to 0.
-            render_offset.set(new_off);
-            strip_no_transition.set(true);
-            anim_translate_px.set(-(THUMB_STEP as i32));
+            batch(move || {
+                render_offset.set(new_off);
+                strip_no_transition.set(true);
+                anim_translate_px.set(neg_step);
+            });
             request_animation_frame_once(move || {
+                if anim_gen.get_untracked() != gen {
+                    return;
+                }
                 request_animation_frame_once(move || {
+                    if anim_gen.get_untracked() != gen {
+                        return;
+                    }
                     strip_no_transition.set(false);
                     anim_translate_px.set(0);
                 });
@@ -551,12 +588,13 @@ pub fn CageBand(
             // Scrolling down: render from current offset (one extra item appended
             // below via render_extra) and animate the strip sliding up by one step.
             render_offset.set(off);
-            anim_translate_px.set(-(THUMB_STEP as i32));
+            anim_translate_px.set(neg_step);
         }
 
+        let anim_ms = scroll_anim_ms();
         // After the CSS transition completes, commit the new offset and snap back.
         spawn_local(async move {
-            TimeoutFuture::new(SCROLL_ANIM_MS).await;
+            TimeoutFuture::new(anim_ms).await;
             if anim_gen.get_untracked() != gen {
                 return; // anchor changed mid-animation; stale callback
             }
