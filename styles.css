@@ -111,14 +111,23 @@ a:hover {
 .bottom-controls {
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
   align-items: baseline;
+  gap: 1rem;
   width: 100%;
   max-width: calc(100vw - 3rem);
-  /* Mirror the grid-and-band centering: the grid is offset left by the band
-     column, so we reserve the same gutter on the right so this row matches. */
-  padding-right: var(--cage-band-gutter);
   box-sizing: border-box;
+}
+
+.bottom-controls .size-control {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.bottom-controls .cage-band__count {
+  width: var(--cage-band-width);
+  flex-shrink: 0;
+  text-align: center;
 }
 
 .size-control {
@@ -139,7 +148,7 @@ a:hover {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--paper-line);
+  border: 2px solid var(--paper-ink);
   border-radius: 6px;
   padding: 4px 8px;
   background: var(--paper-bg);
@@ -174,8 +183,6 @@ a:hover {
 }
 
 .cage-band__count {
-  font-size: 0.75rem;
-  line-height: 18px;
   color: var(--paper-ink-3);
 }
 

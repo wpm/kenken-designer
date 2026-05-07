@@ -492,9 +492,10 @@ pub fn App() -> impl IntoView {
                 </div>
                 {move || {
                     let n = tuple_count.get();
-                    (n > 0).then(|| view! {
-                        <div class="cage-band__count">{crate::cage_band::tuple_count_label(n)}</div>
-                    })
+                    let text = (n > 0).then(|| crate::cage_band::tuple_count_label(n));
+                    view! {
+                        <div class="cage-band__count">{text}</div>
+                    }
                 }}
             </div>
         </main>

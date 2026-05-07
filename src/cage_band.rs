@@ -66,9 +66,12 @@ const THUMB_STEP: u32 = THUMB_SIZE + THUMB_GAP;
 /// replace this once the DOM is laid out.
 const DEFAULT_VISIBLE_COUNT: usize = 1;
 
-/// HTML data attribute used to identify a thumbnail by its ranked-tuple index
-/// from event targets and `document.querySelector`.
-const THUMB_DATA_ATTR: &str = "data-thumb-idx";
+/// CSS class prefix used to identify thumbnails by index for focus targeting.
+const THUMB_IDX_CLASS_PREFIX: &str = "cage-band__thumb--idx-";
+
+thread_local! {
+    static FOCUSED_THUMB: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
 
 // ─── Pure helpers (testable) ────────────────────────────────────────────────
 
@@ -357,29 +360,33 @@ fn Thumbnail(rt: RankedTuple, active_cells: Vec<(usize, usize)>) -> impl IntoVie
 
 // ─── DOM helpers ─────────────────────────────────────────────────────────────
 
-/// Index of the focused thumbnail, if any. Used by both the band's local
-/// keydown handler and the global window handler in `app.rs` to detect when
-/// keys should be owned by the band.
+/// Index of the focused thumbnail, if any. Updated by each thumb's on:focus /
+/// on:blur handlers. Used by both the band's local keydown handler and the
+/// global window handler in `app.rs` to detect when keys belong to the band.
 pub fn focused_thumb_idx() -> Option<usize> {
-    let win = web_sys::window()?;
-    let doc = win.document()?;
-    let active = doc.active_element()?;
-    let val = active.get_attribute(THUMB_DATA_ATTR)?;
-    val.parse().ok()
+    FOCUSED_THUMB.with(std::cell::Cell::get)
+}
+
+fn set_focused_thumb(idx: Option<usize>) {
+    FOCUSED_THUMB.with(|c| c.set(idx));
 }
 
 fn focus_thumb(idx: usize) {
-    let Some(win) = web_sys::window() else {
-        return;
-    };
-    let Some(doc) = win.document() else {
-        return;
-    };
-    let selector = format!("[{THUMB_DATA_ATTR}=\"{idx}\"]");
-    if let Ok(Some(el)) = doc.query_selector(&selector) {
-        if let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>() {
-            let _ = html_el.focus();
+    // Defer to the next animation frame so Leptos has time to update the DOM
+    // (e.g. when scroll_offset changes and new thumbnails are inserted).
+    let cb = Closure::once(move || {
+        let Some(win) = web_sys::window() else { return };
+        let Some(doc) = win.document() else { return };
+        let selector = format!(".{THUMB_IDX_CLASS_PREFIX}{idx}");
+        if let Ok(Some(el)) = doc.query_selector(&selector) {
+            if let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>() {
+                let _ = html_el.focus();
+            }
         }
+    });
+    if let Some(win) = web_sys::window() {
+        let _ = win.request_animation_frame(cb.as_ref().unchecked_ref());
+        cb.forget();
     }
 }
 
@@ -523,11 +530,13 @@ pub fn CageBand(
         "ArrowUp" => {
             let Some(i) = focused_thumb_idx() else { return };
             ev.prevent_default();
+            ev.stop_propagation();
             apply_arrow(arrow_up_target(i, scroll_offset.get_untracked()));
         }
         "ArrowDown" => {
             let Some(i) = focused_thumb_idx() else { return };
             ev.prevent_default();
+            ev.stop_propagation();
             let total = ranked.with_untracked(Vec::len);
             let vis = visible_count.get_untracked();
             apply_arrow(arrow_down_target(
@@ -539,11 +548,13 @@ pub fn CageBand(
         }
         "Escape" => {
             ev.prevent_default();
+            ev.stop_propagation();
             selected_idx.set(None);
             blur_active();
         }
         "Enter" => {
             ev.prevent_default();
+            ev.stop_propagation();
             commit_selected();
         }
         _ => {}
@@ -563,14 +574,11 @@ pub fn CageBand(
                 {move || {
                     let rs = ranked.get();
                     if rs.is_empty() {
-                        return view! {
-                            <div class="cage-band__empty">{tuple_count_label(0)}</div>
-                        }.into_any();
+                        return view! { <div class="cage-band__empty"></div> }.into_any();
                     }
                     let cells = active_cage_cells.get();
                     let off = scroll_offset.get();
                     let vis = visible_count.get();
-                    let _label = tuple_count_label(rs.len());
                     let visible_items: Vec<_> = rs
                         .into_iter()
                         .enumerate()
@@ -586,14 +594,17 @@ pub fn CageBand(
                                 let is_selected = move || selected_idx.get() == Some(i);
                                 view! {
                                     <div
-                                        class="cage-band__thumb"
+                                        class=format!("cage-band__thumb {THUMB_IDX_CLASS_PREFIX}{i}")
                                         class:cage-band__thumb--selected=is_selected
                                         tabindex="0"
-                                        attr:data-thumb-idx=i.to_string()
                                         on:focus=move |_| {
+                                            set_focused_thumb(Some(i));
                                             if selected_idx.get_untracked() != Some(i) {
                                                 selected_idx.set(Some(i));
                                             }
+                                        }
+                                        on:blur=move |_| {
+                                            set_focused_thumb(None);
                                         }
                                     >
                                         <Thumbnail
