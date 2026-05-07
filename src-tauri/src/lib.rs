@@ -1064,14 +1064,14 @@ mod tests {
         insert_cage(
             vec![(3, 0), (3, 1)],
             OpKind::Add,
-            9,
+            4,
             app.state::<Mutex<Session>>(),
         )
         .unwrap();
         insert_cage(
             vec![(0, 2), (0, 3)],
             OpKind::Add,
-            11,
+            6,
             app.state::<Mutex<Session>>(),
         )
         .unwrap();
@@ -1156,10 +1156,21 @@ mod tests {
     #[test]
     fn insert_cage_command_returns_empty_diff_when_idempotent() {
         let app = empty_session_app(3);
-        insert_cage(vec![(0, 0)], OpKind::Add, 1, app.state::<Mutex<Session>>()).unwrap();
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
         // Re-inserting the same cage shape with the same op is idempotent; diff should be empty.
-        let view =
-            insert_cage(vec![(0, 0)], OpKind::Add, 1, app.state::<Mutex<Session>>()).unwrap();
+        let view = insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
         assert!(
             view.diff.is_empty(),
             "idempotent edit should produce an empty diff"
