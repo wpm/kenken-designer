@@ -124,7 +124,7 @@ a:hover {
   justify-content: center;
 }
 
-.bottom-controls .cage-band__count {
+.bottom-controls .tuple-count {
   width: var(--cage-band-width);
   flex-shrink: 0;
   text-align: center;
