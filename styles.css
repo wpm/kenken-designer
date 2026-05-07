@@ -146,13 +146,6 @@ a:hover {
   width: 100%;
 }
 
-.cage-band__entry {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-}
-
 .cage-band__thumb {
   display: block;
   flex-shrink: 0;
@@ -170,10 +163,7 @@ a:hover {
   box-shadow: 0 0 0 2.5px var(--paper-accent);
 }
 
-/* Height pinned so cage_band.rs THUMB_LABEL_HEIGHT can compute thumb steps
-   without measuring DOM. */
 .cage-band__count {
-  height: 18px;
   font-size: 0.75rem;
   line-height: 18px;
   color: var(--paper-ink-3);
