@@ -1,8 +1,8 @@
 use crate::app::{CageView, DraftCage, MoveState, OpKind, PuzzleView};
 use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
 use crate::cage_edit::effective_cages;
-use crate::cage_index::cage_anchor;
-use crate::operator_entry::{ActiveCage, OperatorEntry};
+use crate::cage_index::{cage_anchor, cells_anchor};
+use crate::operator_entry::{targets_for_op, ActiveCage, EntryMode, OperatorEntry};
 use crate::theme::{ACCENT, BG, CAGE_PALETTE, INK, INK3, LINE, SERIF_FONT};
 use leptos::prelude::*;
 
@@ -163,6 +163,8 @@ pub fn Grid(
     let outer_size = layout.cell * usize_to_f64(n);
     let op_labels = render_op_labels(&effective, draft_idx, &layout, entry);
     let cages = view.cages.clone();
+    let cages_for_dropdown = view.cages.clone();
+    let drafts_for_dropdown = drafts;
     let view_for_move = view;
 
     let active_overlay = move || {
@@ -173,6 +175,15 @@ pub fn Grid(
     };
 
     let cursor_rect = move || cursor_rect_view(cursor.get(), layout, entry.get().is_some());
+
+    let target_dropdown = move || {
+        render_target_dropdown(
+            &cages_for_dropdown,
+            &drafts_for_dropdown,
+            layout,
+            entry.get(),
+        )
+    };
 
     let click_overlay = render_click_overlay(layout, on_cell_click, on_cell_right_click);
 
@@ -204,6 +215,7 @@ pub fn Grid(
                 stroke-width=OUTER_STROKE
             />
             {op_labels}
+            {target_dropdown}
             {active_overlay}
             {move_overlay}
             {cursor_rect}
@@ -438,20 +450,23 @@ fn render_op_labels(
             let is_active_draft = draft_idx.is_some_and(|di| i == di);
             let cage_op = cage.op;
             let cage_target = cage.target;
+            let cell_count = cage.cells.len();
             let label = move || {
                 let entry_val = entry.get();
                 let is_entry_cage = entry_val.as_ref().is_some_and(|e| match &e.cage {
                     ActiveCage::Committed(idx) => *idx == i,
                     ActiveCage::Draft => is_active_draft,
                 });
-                if let Some(e) = entry_val.filter(|_| is_entry_cage) {
-                    let glyph = e.op.map_or("", op_glyph);
-                    format!("{}{}|", e.digits, glyph)
-                } else if is_draft {
-                    "?".to_string()
-                } else {
-                    op_label(cage_op, cage_target)
-                }
+                entry_val.filter(|_| is_entry_cage).map_or_else(
+                    || {
+                        if is_draft {
+                            valid_op_glyphs(cell_count)
+                        } else {
+                            op_label(cage_op, cage_target)
+                        }
+                    },
+                    |e| entry_label_text(&e),
+                )
             };
             view! {
                 <text
@@ -469,6 +484,150 @@ fn render_op_labels(
             }
         })
         .collect()
+}
+
+/// Inline anchor label text for a cage that's currently the active entry.
+///
+/// `OpPicker`: valid operator glyphs (e.g. "+ − × ÷"). `TargetPicker`: the typed
+/// digit buffer (or the selected target as a preview) followed by the operator
+/// glyph and an entry caret.
+fn entry_label_text(e: &OperatorEntry) -> String {
+    match &e.mode {
+        EntryMode::OpPicker => valid_op_glyphs_from_options(e),
+        EntryMode::TargetPicker {
+            op,
+            selected,
+            digits,
+        } => {
+            let glyph = op_glyph(*op);
+            if !digits.is_empty() {
+                return format!("{digits}{glyph}|");
+            }
+            let target = targets_for_op(&e.options, *op).get(*selected).copied();
+            target.map_or_else(
+                || format!("{glyph}|"),
+                |t| {
+                    let label = op_label(*op, t);
+                    format!("{label}|")
+                },
+            )
+        }
+    }
+}
+
+/// Glyphs for valid operators on a cage of `cell_count` cells, joined by spaces.
+/// Singletons fall back to `?` since their only valid op (Given) has no glyph.
+fn valid_op_glyphs(cell_count: usize) -> String {
+    let ops: &[OpKind] = match cell_count {
+        2 => &[OpKind::Add, OpKind::Sub, OpKind::Mul, OpKind::Div],
+        n if n >= 3 => &[OpKind::Add, OpKind::Mul],
+        _ => return "?".to_string(),
+    };
+    join_op_glyphs(ops.iter().copied())
+}
+
+fn valid_op_glyphs_from_options(e: &OperatorEntry) -> String {
+    let glyphs = join_op_glyphs(
+        e.options
+            .iter()
+            .map(|o| o.op)
+            .filter(|op| *op != OpKind::Given),
+    );
+    if glyphs.is_empty() {
+        "?".to_string()
+    } else {
+        glyphs
+    }
+}
+
+fn join_op_glyphs(ops: impl Iterator<Item = OpKind>) -> String {
+    ops.map(op_glyph).collect::<Vec<_>>().join(" ")
+}
+
+const DROPDOWN_PAD: f64 = 4.0;
+const DROPDOWN_ROW_GAP: f64 = 2.0;
+
+/// Renders a small dropdown panel at the active cage's anchor showing the valid
+/// targets for the chosen operator (step 2 of the operator-entry flow). Returns
+/// `None` when there's no active `TargetPicker` entry.
+fn render_target_dropdown(
+    cages: &[CageView],
+    drafts: &[DraftCage],
+    layout: Layout,
+    entry: Option<OperatorEntry>,
+) -> Option<AnyView> {
+    let entry = entry?;
+    let EntryMode::TargetPicker { op, selected, .. } = entry.mode.clone() else {
+        return None;
+    };
+    let anchor = match &entry.cage {
+        ActiveCage::Committed(idx) => cages.get(*idx).map(cage_anchor)?,
+        ActiveCage::Draft => drafts.first().map(|d| cells_anchor(&d.cells))?,
+    };
+    let targets: Vec<u32> = targets_for_op(&entry.options, op).to_vec();
+    if targets.is_empty() {
+        return None;
+    }
+    let font = layout.op_font();
+    let row_height = font + DROPDOWN_ROW_GAP;
+    let labels: Vec<String> = targets.iter().map(|&t| op_label(op, t)).collect();
+
+    let (cell_x, cell_y) = layout.origin(anchor.0, anchor.1);
+    // Position below the anchor label, just outside the operator buffer area so the
+    // dropdown doesn't visually merge with the inline label.
+    let panel_x = cell_x + OP_INSET;
+    let panel_y = cell_y + OP_INSET + font + DROPDOWN_PAD;
+
+    // Background rect width: longest label times an approximate em-width.
+    let est_char_w = font * 0.62;
+    let max_chars = labels.iter().map(|s| s.chars().count()).max().unwrap_or(1);
+    let panel_w = est_char_w.mul_add(usize_to_f64(max_chars), 2.0 * DROPDOWN_PAD);
+    let panel_h = row_height.mul_add(usize_to_f64(targets.len()), DROPDOWN_PAD);
+
+    let rows: Vec<_> = labels
+        .into_iter()
+        .enumerate()
+        .map(|(i, label)| {
+            let y = row_height.mul_add(usize_to_f64(i), panel_y + DROPDOWN_PAD);
+            let is_selected = i == selected;
+            let weight = if is_selected { "700" } else { "400" };
+            let fill = if is_selected { ACCENT } else { INK };
+            view! {
+                <text
+                    x=panel_x + DROPDOWN_PAD
+                    y=y
+                    text-anchor="start"
+                    dominant-baseline="hanging"
+                    font-family=SERIF_FONT
+                    font-size=font
+                    font-weight=weight
+                    fill=fill
+                >
+                    {label}
+                </text>
+            }
+        })
+        .collect();
+
+    Some(
+        view! {
+            <g pointer-events="none">
+                <rect
+                    x=panel_x
+                    y=panel_y
+                    width=panel_w
+                    height=panel_h
+                    fill=BG
+                    stroke=LINE
+                    stroke-width=THIN_STROKE
+                    rx="2"
+                    ry="2"
+                />
+                {rows}
+            </g>
+        }
+        .into_any(),
+    )
 }
 
 /// Render overlays for move mode:

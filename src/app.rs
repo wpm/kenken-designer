@@ -7,7 +7,8 @@ use crate::context_menu::{menu_items_for, ContextMenuItems, MenuContext};
 use crate::grid::Grid;
 use crate::navigation::{move_cursor, next_state, NavKey};
 use crate::operator_entry::{
-    is_entry_trigger_key, step as operator_step, ActiveCage, OperatorEntry, Step,
+    enter_picker, enter_picker_with_op, is_entry_trigger_key, op_key_to_kind,
+    step as operator_step, ActiveCage, CageOption, OperatorEntry, Step,
 };
 use leptos::ev::{Event, KeyboardEvent};
 use leptos::prelude::*;
@@ -849,16 +850,8 @@ fn handle_entry_key(
     current_entry: OperatorEntry,
     key: &str,
 ) {
-    let single_cell = puzzle.with_untracked(|opt| {
-        opt.as_ref().is_some_and(|v| match &current_entry.cage {
-            ActiveCage::Committed(idx) => v.cages.get(*idx).is_some_and(|c| c.cells.len() == 1),
-            ActiveCage::Draft => {
-                drafts.with_untracked(|ds| ds.first().is_some_and(|d| d.cells.len() == 1))
-            }
-        })
-    });
     let cage = current_entry.cage.clone();
-    match operator_step(current_entry, key, single_cell) {
+    match operator_step(current_entry, key) {
         Step::Update(new_entry) => entry.set(Some(new_entry)),
         Step::Cancel => entry.set(None),
         Step::Commit { op, target } => match cage {
@@ -895,13 +888,17 @@ fn handle_entry_key(
     }
 }
 
-struct EntryTarget {
-    initial: OperatorEntry,
-    anchor: (usize, usize),
-    single_cell: bool,
+/// Where the picker should attach (committed cage or first draft) plus the data needed
+/// to drive the new flow: the cage's cells (for `cage_options`) and, for committed cages,
+/// the existing op + target (so re-edit on a singleton can pre-select the current value).
+pub struct EntryTarget {
+    pub cage: ActiveCage,
+    pub anchor: (usize, usize),
+    pub cells: Vec<(usize, usize)>,
+    pub current_op_target: Option<(OpKind, u32)>,
 }
 
-fn find_entry_target(
+pub fn find_entry_target(
     puzzle: ReadSignal<Option<PuzzleView>>,
     cursor: RwSignal<(usize, usize)>,
     drafts: RwSignal<Vec<DraftCage>>,
@@ -909,44 +906,79 @@ fn find_entry_target(
     let committed = puzzle.with_untracked(|opt| {
         opt.as_ref().and_then(|v| {
             let (r, c) = cursor.get_untracked();
-            cage_at(v, r, c).map(|idx| {
-                let anchor = cage_anchor(&v.cages[idx]);
-                let cage_op = v.cages[idx].op;
-                let cage_target = v.cages[idx].target;
-                let single_cell = v.cages[idx].cells.len() == 1;
-                let initial = OperatorEntry {
-                    cage: ActiveCage::Committed(idx),
-                    op: Some(cage_op),
-                    digits: if cage_target > 0 {
-                        cage_target.to_string()
-                    } else {
-                        String::new()
-                    },
-                };
-                EntryTarget {
-                    initial,
-                    anchor,
-                    single_cell,
-                }
+            cage_at(v, r, c).map(|idx| EntryTarget {
+                cage: ActiveCage::Committed(idx),
+                anchor: cage_anchor(&v.cages[idx]),
+                cells: v.cages[idx].cells.clone(),
+                current_op_target: Some((v.cages[idx].op, v.cages[idx].target)),
             })
         })
     });
     if committed.is_some() {
         return committed;
     }
-    let (anchor, single_cell) = drafts.with_untracked(|ds| {
-        ds.first()
-            .map(|d| (cells_anchor(&d.cells), d.cells.len() == 1))
-    })?;
-    Some(EntryTarget {
-        initial: OperatorEntry {
+    drafts.with_untracked(|ds| {
+        ds.first().map(|d| EntryTarget {
             cage: ActiveCage::Draft,
-            op: None,
-            digits: String::new(),
-        },
-        anchor,
-        single_cell,
+            anchor: cells_anchor(&d.cells),
+            cells: d.cells.clone(),
+            current_op_target: None,
+        })
     })
+}
+
+#[derive(Serialize)]
+struct CellsArgs {
+    cells: Vec<(usize, usize)>,
+}
+
+#[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
+async fn fetch_cage_options(cells: Vec<(usize, usize)>) -> Vec<CageOption> {
+    let Ok(args) = serde_wasm_bindgen::to_value(&CellsArgs { cells }) else {
+        return Vec::new();
+    };
+    let value = invoke("cage_options", args).await;
+    serde_wasm_bindgen::from_value(value).unwrap_or_default()
+}
+
+/// Builds the initial `OperatorEntry` from a fetched options list and an optional
+/// trigger key. If the trigger is an operator, jumps directly to `TargetPicker`. If
+/// the trigger is a digit (or there's no trigger), enters via `enter_picker` and
+/// applies the digit through `step` (a no-op in `OpPicker`, a jump in `TargetPicker`).
+pub fn build_initial_entry(
+    target: EntryTarget,
+    options: Vec<CageOption>,
+    key: Option<&str>,
+) -> Option<OperatorEntry> {
+    if options.is_empty() {
+        return None;
+    }
+    let current_target = target.current_op_target.map(|(_, t)| t);
+    if let Some(op) = key.and_then(op_key_to_kind) {
+        if let Some(e) = enter_picker_with_op(target.cage.clone(), options.clone(), op, None) {
+            return Some(e);
+        }
+    }
+    let mut entry = enter_picker(target.cage, options, current_target);
+    if let Some(k) = key.filter(|k| op_key_to_kind(k).is_none()) {
+        if let Step::Update(updated) = operator_step(entry.clone(), k) {
+            entry = updated;
+        }
+    }
+    Some(entry)
+}
+
+pub fn spawn_enter_picker(
+    target: EntryTarget,
+    entry: RwSignal<Option<OperatorEntry>>,
+    trigger_key: Option<String>,
+) {
+    spawn_local(async move {
+        let options = fetch_cage_options(target.cells.clone()).await;
+        if let Some(initial) = build_initial_entry(target, options, trigger_key.as_deref()) {
+            entry.set(Some(initial));
+        }
+    });
 }
 
 fn handle_enter_key(
@@ -956,11 +988,12 @@ fn handle_enter_key(
     entry: RwSignal<Option<OperatorEntry>>,
     ev: &KeyboardEvent,
 ) {
-    if let Some(t) = find_entry_target(puzzle, cursor, drafts) {
-        ev.prevent_default();
-        cursor.set(t.anchor);
-        entry.set(Some(t.initial));
-    }
+    let Some(t) = find_entry_target(puzzle, cursor, drafts) else {
+        return;
+    };
+    ev.prevent_default();
+    cursor.set(t.anchor);
+    spawn_enter_picker(t, entry, None);
 }
 
 fn try_enter_entry_with_key(
@@ -976,15 +1009,9 @@ fn try_enter_entry_with_key(
     let Some(t) = find_entry_target(puzzle, cursor, drafts) else {
         return false;
     };
-    match operator_step(t.initial, key, t.single_cell) {
-        Step::Update(new_entry) => {
-            cursor.set(t.anchor);
-            entry.set(Some(new_entry));
-            true
-        }
-        // Unreachable: trigger keys cannot produce Commit (requires Enter) or Cancel (requires Escape).
-        Step::Commit { .. } | Step::Cancel => false,
-    }
+    cursor.set(t.anchor);
+    spawn_enter_picker(t, entry, Some(key.to_string()));
+    true
 }
 
 fn handle_navigate(
