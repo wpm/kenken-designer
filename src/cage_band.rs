@@ -3,6 +3,7 @@ use crate::cage_colors::{assign_cage_colors, build_cell_cage_map};
 use crate::cage_index::cage_anchor;
 use crate::grid::{ceil_sqrt, op_label, usize_to_f64, UNCAGED_FILL};
 use crate::theme::{ACCENT, BG, CAGE_PALETTE, INK, INK3, LINE, SERIF_FONT};
+use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
@@ -68,6 +69,30 @@ const DEFAULT_VISIBLE_COUNT: usize = 1;
 
 /// CSS class prefix used to identify thumbnails by index for focus targeting.
 const THUMB_IDX_CLASS_PREFIX: &str = "cage-band__thumb--idx-";
+
+/// Nominal scroll animation duration. The actual wait honours
+/// `prefers-reduced-motion` by reading `--scroll-anim-duration` from the
+/// document root at runtime; if that resolves to 0ms this returns 0.
+const SCROLL_ANIM_MS_NOMINAL: u32 = 200;
+
+/// Read the effective `--scroll-anim-duration` from the document root (in ms).
+/// Falls back to `SCROLL_ANIM_MS_NOMINAL` if the CSS variable is unavailable.
+fn scroll_anim_ms() -> u32 {
+    let raw = web_sys::window()
+        .and_then(|win| {
+            let el = win.document()?.document_element()?;
+            win.get_computed_style(&el).ok().flatten().map(|s| {
+                s.get_property_value("--scroll-anim-duration")
+                    .unwrap_or_default()
+            })
+        })
+        .unwrap_or_default();
+    // CSS value is e.g. " 200ms" or " 0ms"
+    raw.trim()
+        .trim_end_matches("ms")
+        .parse::<u32>()
+        .unwrap_or(SCROLL_ANIM_MS_NOMINAL)
+}
 
 thread_local! {
     static FOCUSED_THUMB: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
@@ -371,10 +396,18 @@ fn set_focused_thumb(idx: Option<usize>) {
     FOCUSED_THUMB.with(|c| c.set(idx));
 }
 
+fn request_animation_frame_once(f: impl FnOnce() + 'static) {
+    let cb = Closure::once(f);
+    if let Some(win) = web_sys::window() {
+        let _ = win.request_animation_frame(cb.as_ref().unchecked_ref());
+        cb.forget();
+    }
+}
+
 fn focus_thumb(idx: usize) {
     // Defer to the next animation frame so Leptos has time to update the DOM
     // (e.g. when scroll_offset changes and new thumbnails are inserted).
-    let cb = Closure::once(move || {
+    request_animation_frame_once(move || {
         let Some(win) = web_sys::window() else { return };
         let Some(doc) = win.document() else { return };
         let selector = format!(".{THUMB_IDX_CLASS_PREFIX}{idx}");
@@ -384,10 +417,6 @@ fn focus_thumb(idx: usize) {
             }
         }
     });
-    if let Some(win) = web_sys::window() {
-        let _ = win.request_animation_frame(cb.as_ref().unchecked_ref());
-        cb.forget();
-    }
 }
 
 fn blur_active() {
@@ -432,11 +461,30 @@ pub fn CageBand(
     let visible_count = RwSignal::new(DEFAULT_VISIBLE_COUNT);
     let strip_ref: NodeRef<leptos::html::Div> = NodeRef::new();
 
+    // Animation state ────────────────────────────────────────────────────────
+    // render_offset lags scroll_offset during animation (holds the render
+    // window start, including the one-item buffer in the direction of travel).
+    let render_offset = RwSignal::new(0_usize);
+    let anim_translate_px = RwSignal::new(0_i32);
+    let strip_no_transition = RwSignal::new(false);
+    let is_animating = RwSignal::new(false);
+    // Incremented on anchor change to cancel any in-flight animation callback.
+    let anim_gen = RwSignal::new(0_u32);
+    // One extra item is rendered while animating to fill the buffer slot.
+    let render_extra = Signal::derive(move || usize::from(is_animating.get()));
+
     Effect::new(move |_| {
         let anchor = active_cage_anchor.get();
-        ranked.set(vec![]);
-        selected_idx.set(None);
-        scroll_offset.set(0);
+        batch(move || {
+            ranked.set(vec![]);
+            selected_idx.set(None);
+            scroll_offset.set(0);
+            render_offset.set(0);
+            anim_translate_px.set(0);
+            strip_no_transition.set(false);
+            is_animating.set(false);
+            anim_gen.update(|g| *g = g.wrapping_add(1));
+        });
         if let Some(anchor) = anchor {
             spawn_local(async move {
                 if let Some(tuples) = call_rank_active_cage(anchor).await {
@@ -468,6 +516,7 @@ pub fn CageBand(
         let max_off = max_scroll_offset(vis, total);
         if off > max_off {
             scroll_offset.set(max_off);
+            render_offset.set(max_off);
         }
     });
 
@@ -481,20 +530,83 @@ pub fn CageBand(
         can_scroll_down_at(scroll_offset.get(), visible_count.get(), total)
     };
 
-    let on_up = move |_| {
-        let off = scroll_offset.get_untracked();
-        if can_scroll_up_at(off) {
-            scroll_offset.set(off - 1);
+    let animate_scroll = move |direction: i32| {
+        if is_animating.get_untracked() {
+            return;
         }
-    };
-    let on_down = move |_| {
         let off = scroll_offset.get_untracked();
         let total = ranked.with_untracked(Vec::len);
         let vis = visible_count.get_untracked();
-        if can_scroll_down_at(off, vis, total) {
-            scroll_offset.set(off + 1);
+
+        let new_off = if direction < 0 {
+            if !can_scroll_up_at(off) {
+                return;
+            }
+            off - 1
+        } else {
+            if !can_scroll_down_at(off, vis, total) {
+                return;
+            }
+            off + 1
+        };
+
+        is_animating.set(true);
+        let gen = anim_gen.get_untracked();
+        #[allow(clippy::cast_possible_wrap)] // THUMB_STEP is a small layout constant
+        let neg_step = -(THUMB_STEP as i32);
+
+        if direction < 0 {
+            // Scrolling up: render from new_off (one item earlier) and start the
+            // strip translated up by one step. Two rAFs are needed: the first
+            // lets the browser commit the snapped -THUMB_STEP position, the
+            // second starts the CSS transition sliding back to 0.
+            batch(move || {
+                render_offset.set(new_off);
+                strip_no_transition.set(true);
+                anim_translate_px.set(neg_step);
+            });
+            request_animation_frame_once(move || {
+                if anim_gen.get_untracked() != gen {
+                    return;
+                }
+                request_animation_frame_once(move || {
+                    if anim_gen.get_untracked() != gen {
+                        return;
+                    }
+                    strip_no_transition.set(false);
+                    anim_translate_px.set(0);
+                });
+            });
+        } else {
+            // Scrolling down: render from current offset (one extra item appended
+            // below via render_extra) and animate the strip sliding up by one step.
+            render_offset.set(off);
+            anim_translate_px.set(neg_step);
         }
+
+        let anim_ms = scroll_anim_ms();
+        // After the CSS transition completes, commit the new offset and snap back.
+        spawn_local(async move {
+            TimeoutFuture::new(anim_ms).await;
+            if anim_gen.get_untracked() != gen {
+                return; // anchor changed mid-animation; stale callback
+            }
+            batch(move || {
+                scroll_offset.set(new_off);
+                render_offset.set(new_off);
+                strip_no_transition.set(true);
+                anim_translate_px.set(0);
+            });
+            // Re-enable transition after the no-transition snap has painted.
+            request_animation_frame_once(move || {
+                strip_no_transition.set(false);
+                is_animating.set(false);
+            });
+        });
     };
+
+    let on_up = move |_| animate_scroll(-1);
+    let on_down = move |_| animate_scroll(1);
 
     let commit_selected = move || {
         let Some(idx) = selected_idx.get_untracked() else {
@@ -516,13 +628,16 @@ pub fn CageBand(
         let Some((new_i, new_scroll)) = target else {
             return;
         };
-        if new_scroll != scroll_offset.get_untracked() {
-            scroll_offset.set(new_scroll);
+        let old_scroll = scroll_offset.get_untracked();
+        if new_scroll != old_scroll {
+            let dir = if new_scroll > old_scroll {
+                1_i32
+            } else {
+                -1_i32
+            };
+            animate_scroll(dir);
         }
         selected_idx.set(Some(new_i));
-        // The view closure rebuilds visible thumbnails synchronously when
-        // scroll_offset changes, so the new element exists by the time we
-        // ask the browser to focus it.
         focus_thumb(new_i);
     };
 
@@ -571,52 +686,59 @@ pub fn CageBand(
                 "▲"
             </button>
             <div class="cage-band__strip" node_ref=strip_ref>
-                {move || {
-                    let rs = ranked.get();
-                    if rs.is_empty() {
-                        return view! { <div class="cage-band__empty"></div> }.into_any();
-                    }
-                    let cells = active_cage_cells.get();
-                    let off = scroll_offset.get();
-                    let vis = visible_count.get();
-                    let visible_items: Vec<_> = rs
-                        .into_iter()
-                        .enumerate()
-                        .skip(off)
-                        .take(vis)
-                        .collect();
-                    view! {
-                        <For
-                            each=move || visible_items.clone()
-                            key=|(i, _)| *i
-                            children=move |(i, rt)| {
-                                let cells_clone = cells.clone();
-                                let is_selected = move || selected_idx.get() == Some(i);
-                                view! {
-                                    <div
-                                        class=format!("cage-band__thumb {THUMB_IDX_CLASS_PREFIX}{i}")
-                                        class:cage-band__thumb--selected=is_selected
-                                        tabindex="0"
-                                        on:focus=move |_| {
-                                            set_focused_thumb(Some(i));
-                                            if selected_idx.get_untracked() != Some(i) {
-                                                selected_idx.set(Some(i));
+                <div
+                    class="cage-band__strip-inner"
+                    class:cage-band__strip--no-transition=move || strip_no_transition.get()
+                    style=move || format!("transform:translateY({}px)", anim_translate_px.get())
+                >
+                    {move || {
+                        let rs = ranked.get();
+                        if rs.is_empty() {
+                            return view! { <div class="cage-band__empty"></div> }.into_any();
+                        }
+                        let cells = active_cage_cells.get();
+                        let off = render_offset.get();
+                        let vis = visible_count.get();
+                        let extra = render_extra.get();
+                        let visible_items: Vec<_> = rs
+                            .into_iter()
+                            .enumerate()
+                            .skip(off)
+                            .take(vis + extra)
+                            .collect();
+                        view! {
+                            <For
+                                each=move || visible_items.clone()
+                                key=|(i, _)| *i
+                                children=move |(i, rt)| {
+                                    let cells_clone = cells.clone();
+                                    let is_selected = move || selected_idx.get() == Some(i);
+                                    view! {
+                                        <div
+                                            class=format!("cage-band__thumb {THUMB_IDX_CLASS_PREFIX}{i}")
+                                            class:cage-band__thumb--selected=is_selected
+                                            tabindex="0"
+                                            on:focus=move |_| {
+                                                set_focused_thumb(Some(i));
+                                                if selected_idx.get_untracked() != Some(i) {
+                                                    selected_idx.set(Some(i));
+                                                }
                                             }
-                                        }
-                                        on:blur=move |_| {
-                                            set_focused_thumb(None);
-                                        }
-                                    >
-                                        <Thumbnail
-                                            rt=rt
-                                            active_cells=cells_clone
-                                        />
-                                    </div>
+                                            on:blur=move |_| {
+                                                set_focused_thumb(None);
+                                            }
+                                        >
+                                            <Thumbnail
+                                                rt=rt
+                                                active_cells=cells_clone
+                                            />
+                                        </div>
+                                    }
                                 }
-                            }
-                        />
-                    }.into_any()
-                }}
+                            />
+                        }.into_any()
+                    }}
+                </div>
             </div>
             <button
                 class="cage-band__arrow"

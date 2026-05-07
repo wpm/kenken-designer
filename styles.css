@@ -6,6 +6,7 @@
   --paper-line: #b9ad93;
   --paper-accent: #1a4e7a;
 
+  --scroll-anim-duration: 200ms;
   --flash-duration: 300ms;
   --flash-removed-color: var(--c-warning, #c0392b);
   --flash-added-glow: var(--c-accent, #1f77b4);
@@ -157,12 +158,21 @@ a:hover {
 
 .cage-band__strip {
   flex: 1;
+  overflow: hidden;
+  width: 100%;
+}
+
+.cage-band__strip-inner {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow: hidden;
   align-items: center;
   width: 100%;
+  transition: transform var(--scroll-anim-duration) ease-in-out;
+}
+
+.cage-band__strip--no-transition {
+  transition: none;
 }
 
 .cage-band__thumb {
@@ -251,5 +261,6 @@ a:hover {
 @media (prefers-reduced-motion: reduce) {
   :root {
     --flash-duration: 0ms;
+    --scroll-anim-duration: 0ms;
   }
 }
