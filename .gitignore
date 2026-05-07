@@ -1,7 +1,6 @@
 /dist/
 /target/
 /Cargo.lock
-/.claude
 /node_modules/
 /tailwind-out.css
 /package-lock.json
