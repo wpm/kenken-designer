@@ -79,19 +79,12 @@ const SCROLL_ANIM_MS_NOMINAL: u32 = 200;
 /// Falls back to `SCROLL_ANIM_MS_NOMINAL` if the CSS variable is unavailable.
 fn scroll_anim_ms() -> u32 {
     let raw = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.document_element())
-        .map(|el| {
-            web_sys::window()
-                .unwrap()
-                .get_computed_style(&el)
+        .and_then(|win| {
+            let el = win.document()?.document_element()?;
+            win.get_computed_style(&el)
                 .ok()
                 .flatten()
-                .map(|s| {
-                    s.get_property_value("--scroll-anim-duration")
-                        .unwrap_or_default()
-                })
-                .unwrap_or_default()
+                .map(|s| s.get_property_value("--scroll-anim-duration").unwrap_or_default())
         })
         .unwrap_or_default();
     // CSS value is e.g. " 200ms" or " 0ms"
@@ -637,9 +630,8 @@ pub fn CageBand(
         };
         let old_scroll = scroll_offset.get_untracked();
         if new_scroll != old_scroll {
-            #[allow(clippy::cast_possible_wrap)]
-            let dir = (new_scroll as i32) - (old_scroll as i32);
-            animate_scroll(dir.signum());
+            let dir = if new_scroll > old_scroll { 1_i32 } else { -1_i32 };
+            animate_scroll(dir);
         }
         selected_idx.set(Some(new_i));
         focus_thumb(new_i);
