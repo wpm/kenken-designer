@@ -2,6 +2,17 @@ use crate::app::{DraftCage, PuzzleView};
 use crate::cage_edit::legal_move_targets;
 use crate::cage_index::cage_at;
 
+/// Display label for the keyboard shortcut bound to each right-click menu item.
+/// These mirror the bindings in [`crate::app::dispatch_key`] and the Enter/Splinter
+/// handlers in `install_keydown_handler`.
+pub mod shortcut {
+    pub const SET_OPERATION: &str = "Enter";
+    pub const MAKE_SINGLETON: &str = "Space";
+    pub const UNCAGE: &str = "Esc";
+    pub const DELETE_CAGE: &str = "Del";
+    pub const MOVE_CELL: &str = "M";
+}
+
 pub struct MenuContext {
     pub cell: (usize, usize),
     pub view: PuzzleView,

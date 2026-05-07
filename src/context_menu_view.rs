@@ -3,14 +3,22 @@ use crate::app::{
 };
 use crate::cage_edit::{delete_at, escape_at, splinter_at};
 use crate::cage_index::cage_anchor;
+use crate::context_menu::shortcut;
 use crate::operator_entry::{ActiveCage, OperatorEntry};
-use crate::theme::{BG, INK, LINE, SANS_FONT};
+use crate::theme::{BG, INK, INK3, LINE, SANS_FONT};
 use leptos::prelude::*;
 use leptos::web_sys;
 use wasm_bindgen::JsCast;
 
 fn item_style() -> String {
-    format!("padding:5px 14px;cursor:pointer;white-space:nowrap;color:{INK};user-select:none;")
+    format!(
+        "padding:5px 14px;cursor:pointer;white-space:nowrap;color:{INK};user-select:none;\
+         display:flex;align-items:center;gap:24px;"
+    )
+}
+
+fn shortcut_style() -> String {
+    format!("color:{INK3};margin-left:auto;font-variant-numeric:tabular-nums;")
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -99,7 +107,8 @@ pub fn ContextMenu(
                         close();
                     }
                 >
-                    "Set operation\u{2026}"
+                    <span>"Set operation\u{2026}"</span>
+                    <span style=shortcut_style()>{shortcut::SET_OPERATION}</span>
                 </div>
             })}
             {items.make_singleton.then(|| view! {
@@ -121,7 +130,8 @@ pub fn ContextMenu(
                         close();
                     }
                 >
-                    "Make singleton"
+                    <span>"Make singleton"</span>
+                    <span style=shortcut_style()>{shortcut::MAKE_SINGLETON}</span>
                 </div>
             })}
             {items.uncage.then(|| view! {
@@ -143,7 +153,8 @@ pub fn ContextMenu(
                         close();
                     }
                 >
-                    "Uncage"
+                    <span>"Uncage"</span>
+                    <span style=shortcut_style()>{shortcut::UNCAGE}</span>
                 </div>
             })}
             {items.delete_cage.then(|| view! {
@@ -165,7 +176,8 @@ pub fn ContextMenu(
                         close();
                     }
                 >
-                    "Delete cage"
+                    <span>"Delete cage"</span>
+                    <span style=shortcut_style()>{shortcut::DELETE_CAGE}</span>
                 </div>
             })}
             {items.can_move.then(|| {
@@ -192,7 +204,8 @@ pub fn ContextMenu(
                             close2();
                         }
                     >
-                        "Move cell\u{2026}"
+                        <span>"Move cell\u{2026}"</span>
+                        <span style=shortcut_style()>{shortcut::MOVE_CELL}</span>
                     </div>
                 }
             })}
