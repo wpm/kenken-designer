@@ -409,10 +409,12 @@ fn request_animation_frame_once(f: impl FnOnce() + 'static) {
     }
 }
 
-fn focus_thumb(idx: usize) {
-    // Defer to the next animation frame so Leptos has time to update the DOM
-    // (e.g. when scroll_offset changes and new thumbnails are inserted).
+// Guards against a stale rAF re-focusing a thumb after Escape clears selected_idx.
+fn focus_thumb(idx: usize, still_valid: impl Fn() -> bool + 'static) {
     request_animation_frame_once(move || {
+        if !still_valid() {
+            return;
+        }
         let Some(win) = web_sys::window() else { return };
         let Some(doc) = win.document() else { return };
         let selector = format!(".{THUMB_IDX_CLASS_PREFIX}{idx}");
@@ -659,7 +661,7 @@ pub fn CageBand(
         // Set eagerly so the global dispatcher sees the new index on the very
         // next keydown, before the rAF-deferred DOM .focus() call fires.
         set_focused_thumb(Some(new_i));
-        focus_thumb(new_i);
+        focus_thumb(new_i, move || selected_idx.get_untracked() == Some(new_i));
     };
 
     let on_keydown = move |ev: leptos::ev::KeyboardEvent| match ev.key().as_str() {
@@ -722,53 +724,46 @@ pub fn CageBand(
                     class:cage-band__strip--no-transition=move || strip_no_transition.get()
                     style=move || format!("transform:translateY({}px)", anim_translate_px.get())
                 >
-                    {move || {
-                        let rs = ranked.get();
-                        if rs.is_empty() {
-                            return view! { <div class="cage-band__empty"></div> }.into_any();
+                    {move || ranked.get().is_empty().then(|| view! { <div class="cage-band__empty"></div> })}
+                    <For
+                        each=move || {
+                            let rs = ranked.get();
+                            let off = render_offset.get();
+                            let vis = visible_count.get();
+                            let extra = render_extra.get();
+                            rs.into_iter()
+                                .enumerate()
+                                .skip(off)
+                                .take(vis + extra)
+                                .collect::<Vec<_>>()
                         }
-                        let cells = active_cage_cells.get();
-                        let off = render_offset.get();
-                        let vis = visible_count.get();
-                        let extra = render_extra.get();
-                        let visible_items: Vec<_> = rs
-                            .into_iter()
-                            .enumerate()
-                            .skip(off)
-                            .take(vis + extra)
-                            .collect();
-                        view! {
-                            <For
-                                each=move || visible_items.clone()
-                                key=|(i, _)| *i
-                                children=move |(i, rt)| {
-                                    let cells_clone = cells.clone();
-                                    let is_selected = move || selected_idx.get() == Some(i);
-                                    view! {
-                                        <div
-                                            class=format!("cage-band__thumb {THUMB_IDX_CLASS_PREFIX}{i}")
-                                            class:cage-band__thumb--selected=is_selected
-                                            tabindex="0"
-                                            on:focus=move |_| {
-                                                set_focused_thumb(Some(i));
-                                                if selected_idx.get_untracked() != Some(i) {
-                                                    selected_idx.set(Some(i));
-                                                }
-                                            }
-                                            on:blur=move |_| {
-                                                set_focused_thumb(None);
-                                            }
-                                        >
-                                            <Thumbnail
-                                                rt=rt
-                                                active_cells=cells_clone
-                                            />
-                                        </div>
+                        key=|(i, _)| *i
+                        children=move |(i, rt)| {
+                            let cells_clone = active_cage_cells.get_untracked();
+                            let is_selected = move || selected_idx.get() == Some(i);
+                            view! {
+                                <div
+                                    class=format!("cage-band__thumb {THUMB_IDX_CLASS_PREFIX}{i}")
+                                    class:cage-band__thumb--selected=is_selected
+                                    tabindex="0"
+                                    on:focus=move |_| {
+                                        set_focused_thumb(Some(i));
+                                        if selected_idx.get_untracked() != Some(i) {
+                                            selected_idx.set(Some(i));
+                                        }
                                     }
-                                }
-                            />
-                        }.into_any()
-                    }}
+                                    on:blur=move |_| {
+                                        set_focused_thumb(None);
+                                    }
+                                >
+                                    <Thumbnail
+                                        rt=rt
+                                        active_cells=cells_clone
+                                    />
+                                </div>
+                            }
+                        }
+                    />
                 </div>
             </div>
             <button
