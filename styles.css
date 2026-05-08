@@ -99,8 +99,6 @@ a:hover {
   flex-direction: row;
   align-items: flex-start;
   gap: 1rem;
-  width: 100%;
-  justify-content: center;
 }
 
 .grid-svg {
