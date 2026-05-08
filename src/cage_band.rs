@@ -134,6 +134,11 @@ const fn can_scroll_down_at(offset: usize, visible: usize, total: usize) -> bool
     offset + visible < total
 }
 
+/// Whether `idx` falls within the visible window `[offset, offset + visible)`.
+const fn is_in_visible_window(idx: usize, offset: usize, visible: usize) -> bool {
+    visible > 0 && idx >= offset && idx < offset + visible
+}
+
 /// Compute the new (`focused`, `scroll_offset`) after pressing `ArrowUp` on
 /// the thumbnail at `focused`. Returns `None` if focus is already at the top.
 const fn arrow_up_target(focused: usize, scroll: usize) -> Option<(usize, usize)> {
@@ -601,9 +606,11 @@ pub fn CageBand(
                 if let Some(sel) = selected_idx.get_untracked() {
                     let vis = visible_count.get_untracked();
                     let total = ranked.with_untracked(Vec::len);
-                    let max_off = max_scroll_offset(vis, total);
-                    let clamped_off = new_off.min(max_off);
-                    if sel < clamped_off || (vis > 0 && sel >= clamped_off + vis) {
+                    // Re-clamp new_off: visible_count may have changed during the
+                    // animation timeout (e.g. a window resize), even though an
+                    // anchor change is guarded by anim_gen above.
+                    let off = new_off.min(max_scroll_offset(vis, total));
+                    if !is_in_visible_window(sel, off, vis) {
                         selected_idx.set(None);
                     }
                 }
@@ -676,7 +683,9 @@ pub fn CageBand(
             ));
         }
         "Escape" => {
-            let Some(_) = focused_thumb_idx() else { return };
+            if focused_thumb_idx().is_none() {
+                return;
+            }
             ev.prevent_default();
             ev.stop_propagation();
             // Clear eagerly — don't rely on the blur event to update FOCUSED_THUMB,
@@ -687,7 +696,9 @@ pub fn CageBand(
             blur_active();
         }
         "Enter" => {
-            let Some(_) = focused_thumb_idx() else { return };
+            if focused_thumb_idx().is_none() {
+                return;
+            }
             ev.prevent_default();
             ev.stop_propagation();
             commit_selected();
@@ -889,6 +900,27 @@ mod tests {
     fn arrow_down_target_does_not_scroll_past_end() {
         // Focus 8 with scroll 6, visible 3; new_focused 9 is last; scroll stays.
         assert_eq!(arrow_down_target(8, 6, 3, 10), Some((9, 7)));
+    }
+
+    #[test]
+    fn is_in_visible_window_returns_false_for_zero_visible() {
+        assert!(!is_in_visible_window(0, 0, 0));
+        assert!(!is_in_visible_window(5, 3, 0));
+    }
+
+    #[test]
+    fn is_in_visible_window_returns_true_for_idx_in_range() {
+        assert!(is_in_visible_window(0, 0, 3));
+        assert!(is_in_visible_window(2, 0, 3));
+        assert!(is_in_visible_window(5, 3, 4));
+        assert!(is_in_visible_window(6, 3, 4));
+    }
+
+    #[test]
+    fn is_in_visible_window_returns_false_for_idx_outside_range() {
+        assert!(!is_in_visible_window(3, 0, 3)); // one past end
+        assert!(!is_in_visible_window(2, 3, 4)); // before offset
+        assert!(!is_in_visible_window(7, 3, 4)); // past end
     }
 
     #[test]
