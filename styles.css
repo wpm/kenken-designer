@@ -11,9 +11,11 @@
   --flash-removed-color: var(--c-warning, #c0392b);
   --flash-added-glow: var(--c-accent, #1f77b4);
 
+  --chrome-height: 8.25rem;
   --cage-band-width: 192px;
   --cage-band-gutter: calc(var(--cage-band-width) + 1rem);
-  --grid-size: min(calc(100vw - 3rem - var(--cage-band-gutter)), calc(100vh - 8.25rem));
+  --grid-size: min(calc(100vw - 3rem - var(--cage-band-gutter)), calc(100vh - var(--chrome-height)));
+  --band-height: calc(100vh - var(--chrome-height));
 
   font-family: "Inter", system-ui, sans-serif;
   font-size: 16px;
@@ -138,10 +140,10 @@ a:hover {
    between empty and populated. */
 .cage-band {
   width: var(--cage-band-width);
+  height: var(--band-height);
   flex-shrink: 0;
   box-sizing: border-box;
   outline: none;
-  align-self: stretch;
   display: flex;
   flex-direction: column;
   align-items: center;
