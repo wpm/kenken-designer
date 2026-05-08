@@ -596,6 +596,17 @@ pub fn CageBand(
                 render_offset.set(new_off);
                 strip_no_transition.set(true);
                 anim_translate_px.set(0);
+                // Clamp selected_idx into the now-committed visible window so it
+                // can't silently point at an off-screen thumbnail after fast input.
+                if let Some(sel) = selected_idx.get_untracked() {
+                    let vis = visible_count.get_untracked();
+                    let total = ranked.with_untracked(Vec::len);
+                    let max_off = max_scroll_offset(vis, total);
+                    let clamped_off = new_off.min(max_off);
+                    if sel < clamped_off || (vis > 0 && sel >= clamped_off + vis) {
+                        selected_idx.set(None);
+                    }
+                }
             });
             // Re-enable transition after the no-transition snap has painted.
             request_animation_frame_once(move || {
@@ -638,6 +649,9 @@ pub fn CageBand(
             animate_scroll(dir);
         }
         selected_idx.set(Some(new_i));
+        // Set eagerly so the global dispatcher sees the new index on the very
+        // next keydown, before the rAF-deferred DOM .focus() call fires.
+        set_focused_thumb(Some(new_i));
         focus_thumb(new_i);
     };
 
@@ -662,12 +676,18 @@ pub fn CageBand(
             ));
         }
         "Escape" => {
+            let Some(_) = focused_thumb_idx() else { return };
             ev.prevent_default();
             ev.stop_propagation();
+            // Clear eagerly — don't rely on the blur event to update FOCUSED_THUMB,
+            // since a stale Some(_) would cause the global dispatcher to keep
+            // swallowing arrow keys even after focus has returned to the grid.
+            set_focused_thumb(None);
             selected_idx.set(None);
             blur_active();
         }
         "Enter" => {
+            let Some(_) = focused_thumb_idx() else { return };
             ev.prevent_default();
             ev.stop_propagation();
             commit_selected();
