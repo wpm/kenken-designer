@@ -48,6 +48,15 @@ export async function waitForApp(page: Page) {
   await page.waitForSelector('.grid-svg', { timeout: 10000 });
 }
 
+// Read the Y attribute of the SVG cursor rect.
+export async function getCursorY(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const el = document.querySelector('[data-testid="cursor"]');
+    if (!el) throw new Error('cursor element not found');
+    return parseFloat(el.getAttribute('y') ?? 'NaN');
+  });
+}
+
 // Click the grid cell at (row, col) in an N×N grid by computing its position
 // from the SVG bounds.
 export async function clickGridCell(page: Page, n: number, row: number, col: number) {

@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { clickGridCell, setupCageBandWithTuples } from './helpers';
+import { clickGridCell, setupCageBandWithTuples, getCursorY } from './helpers';
 
 const N = 3;
 const ONE_CAGE = [{ cells: [[0, 0]], op: 'Given', target: 3 }];
@@ -7,15 +7,6 @@ const ONE_CAGE = [{ cells: [[0, 0]], op: 'Given', target: 3 }];
 const clickCell = (page: Page, row: number, col: number) =>
   clickGridCell(page, N, row, col);
 
-// Read the Y attribute of the SVG cursor rect. data-testid="cursor" is set on
-// the element in grid.rs so it can be targeted unambiguously.
-async function getCursorY(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const el = document.querySelector('[data-testid="cursor"]');
-    if (!el) throw new Error('cursor element not found');
-    return parseFloat(el.getAttribute('y') ?? 'NaN');
-  });
-}
 
 test.describe('arrow nav after cage band interaction', () => {
   test('ArrowDown moves grid cursor after Escape from cage band', async ({ page }) => {
