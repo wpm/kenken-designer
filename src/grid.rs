@@ -257,6 +257,7 @@ fn cursor_rect_view(cursor: (usize, usize), layout: Layout, in_entry: bool) -> i
     };
     view! {
         <rect
+            data-testid="cursor"
             x=x + CURSOR_INSET
             y=y + CURSOR_INSET
             width=side

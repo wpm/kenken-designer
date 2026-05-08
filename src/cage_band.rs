@@ -412,7 +412,14 @@ fn request_animation_frame_once(f: impl FnOnce() + 'static) {
 fn focus_thumb(idx: usize) {
     // Defer to the next animation frame so Leptos has time to update the DOM
     // (e.g. when scroll_offset changes and new thumbnails are inserted).
+    // Guard: only focus if FOCUSED_THUMB still points at this idx — an intervening
+    // Escape (which clears FOCUSED_THUMB eagerly) must suppress the stale focus call,
+    // otherwise the on:focus handler re-sets FOCUSED_THUMB to Some(idx) and the
+    // global key dispatcher keeps routing arrows to the band instead of the grid.
     request_animation_frame_once(move || {
+        if focused_thumb_idx() != Some(idx) {
+            return;
+        }
         let Some(win) = web_sys::window() else { return };
         let Some(doc) = win.document() else { return };
         let selector = format!(".{THUMB_IDX_CLASS_PREFIX}{idx}");
