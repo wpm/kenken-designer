@@ -14,6 +14,7 @@
   --cage-band-width: 192px;
   --cage-band-gutter: calc(var(--cage-band-width) + 1rem);
   --grid-size: min(calc(100vw - 3rem - var(--cage-band-gutter)), calc(100vh - 8.25rem));
+  --band-height: calc(100vh - 8.25rem);
 
   font-family: "Inter", system-ui, sans-serif;
   font-size: 16px;
@@ -138,10 +139,11 @@ a:hover {
    between empty and populated. */
 .cage-band {
   width: var(--cage-band-width);
+  height: var(--band-height);
   flex-shrink: 0;
   box-sizing: border-box;
   outline: none;
-  align-self: stretch;
+  align-self: flex-start;
   display: flex;
   flex-direction: column;
   align-items: center;
