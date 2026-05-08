@@ -1,75 +1,26 @@
 import { test, expect, Page } from '@playwright/test';
-import { installTauriStubs, waitForApp } from './helpers';
+import {
+  installTauriStubs,
+  waitForApp,
+  makeState,
+  clickGridCell,
+  setupCageBandWithTuples,
+} from './helpers';
 
 const N = 3;
 
-// A 3×3 PuzzleView with one single-cell cage at (0,0).
-function makePuzzleView() {
-  const cells = Array.from({ length: N }, () =>
-    Array.from({ length: N }, () => Array.from({ length: N }, (_, i) => i + 1)),
-  );
-  const cages = [{ cells: [[0, 0]], op: 'Given', target: 3 }];
-  return { n: N, cells, cages, diff: { changes: [] } };
-}
+const ONE_CAGE = [{ cells: [[0, 0]], op: 'Given', target: 3 }];
+const TWO_CAGES = [
+  { cells: [[0, 0]], op: 'Given', target: 3 },
+  { cells: [[0, 2]], op: 'Given', target: 2 },
+];
 
-// A 3×3 PuzzleView with two single-cell cages: (0,0) and (0,2).
-function makeTwoCagePuzzleView() {
-  const cells = Array.from({ length: N }, () =>
-    Array.from({ length: N }, () => Array.from({ length: N }, (_, i) => i + 1)),
-  );
-  const cages = [
-    { cells: [[0, 0]], op: 'Given', target: 3 },
-    { cells: [[0, 2]], op: 'Given', target: 2 },
-  ];
-  return { n: N, cells, cages, diff: { changes: [] } };
-}
-
-// Install Tauri stubs, set up `rank_active_cage` to return `tupleCount` tuples,
-// navigate to the page, and click the caged cell to activate the cage band.
-async function setupScrollableBand(page: Page, tupleCount: number) {
-  const view = makePuzzleView();
-  await installTauriStubs(page, view);
-
-  // Override rank_active_cage to return a list of ranked tuples.
-  await page.addInitScript(
-    ({ count, puzzleView }: { count: number; puzzleView: any }) => {
-      const tuples = Array.from({ length: count }, (_, i) => ({
-        tuple: [i + 1],
-        view: puzzleView,
-        total_reduction: 0,
-        newly_singleton: 0,
-      }));
-      (window as any).__tauri_invoke_handlers__ = {
-        ...((window as any).__tauri_invoke_handlers__ ?? {}),
-        rank_active_cage: () => tuples,
-      };
-    },
-    { count: tupleCount, puzzleView: view },
-  );
-
-  await waitForApp(page);
-
-  await clickCell(page, 0, 0);
-
-  // Wait for thumbnails to appear in the cage band.
-  await page.waitForSelector('.cage-band__thumb', { timeout: 8000 });
-}
-
-// Click the grid cell at (row, col) by computing its position from the SVG bounds.
-async function clickCell(page: Page, row: number, col: number) {
-  const svg = page.locator('.grid-svg');
-  const box = await svg.boundingBox();
-  if (!box) throw new Error('grid-svg not found');
-  const cellSize = box.width / N;
-  await page.mouse.click(
-    box.x + cellSize * (col + 0.5),
-    box.y + cellSize * (row + 0.5),
-  );
-}
+const clickCell = (page: Page, row: number, col: number) =>
+  clickGridCell(page, N, row, col);
 
 test.describe('cage band scroll animation', () => {
   test('scroll-down arrow triggers CSS transform animation', async ({ page }) => {
-    await setupScrollableBand(page, 6);
+    await setupCageBandWithTuples(page, N, ONE_CAGE, 6);
 
     const inner = page.locator('.cage-band__strip-inner');
     await expect(inner).toBeVisible();
@@ -107,7 +58,7 @@ test.describe('cage band scroll animation', () => {
   });
 
   test('scroll-up arrow triggers CSS transform animation', async ({ page }) => {
-    await setupScrollableBand(page, 6);
+    await setupCageBandWithTuples(page, N, ONE_CAGE, 6);
 
     const inner = page.locator('.cage-band__strip-inner');
     const downBtn = page.locator('.cage-band__arrow[aria-label="Scroll down"]');
@@ -147,13 +98,13 @@ test.describe('cage band scroll animation', () => {
   });
 
   test('no-transition class is absent in steady state', async ({ page }) => {
-    await setupScrollableBand(page, 6);
+    await setupCageBandWithTuples(page, N, ONE_CAGE, 6);
     const inner = page.locator('.cage-band__strip-inner');
     await expect(inner).not.toHaveClass(/cage-band__strip--no-transition/);
   });
 
   test('no-transition class is absent after scroll-down animation completes', async ({ page }) => {
-    await setupScrollableBand(page, 6);
+    await setupCageBandWithTuples(page, N, ONE_CAGE, 6);
     const downBtn = page.locator('.cage-band__arrow[aria-label="Scroll down"]');
     await downBtn.click();
     await page.waitForTimeout(400);
@@ -162,7 +113,7 @@ test.describe('cage band scroll animation', () => {
   });
 
   test('render_extra: one extra thumb rendered during animation, gone after', async ({ page }) => {
-    await setupScrollableBand(page, 6);
+    await setupCageBandWithTuples(page, N, ONE_CAGE, 6);
 
     // With a tall enough viewport, visible_count should be at least 1.
     // Count thumbs at rest (should equal visible_count, not +1).
@@ -192,7 +143,7 @@ test.describe('cage band scroll animation', () => {
 
   test('anchor change mid-animation: strip is clean after new cage loads', async ({ page }) => {
     // Use a puzzle with two cages so we can switch between them.
-    const view = makeTwoCagePuzzleView();
+    const view = makeState(N, TWO_CAGES);
     await installTauriStubs(page, view);
 
     await page.addInitScript(
@@ -240,7 +191,7 @@ test.describe('cage band scroll animation', () => {
   }) => {
     // Set up stubs and navigate first, then inject the 0ms override before
     // activating the cage so scroll_anim_ms() reads 0 when animate_scroll runs.
-    const view = makePuzzleView();
+    const view = makeState(N, ONE_CAGE);
     await installTauriStubs(page, view);
     await page.addInitScript(
       ({ count, puzzleView }: { count: number; puzzleView: any }) => {

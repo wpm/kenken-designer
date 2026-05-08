@@ -47,3 +47,49 @@ export async function waitForApp(page: Page) {
   await page.goto('/');
   await page.waitForSelector('.grid-svg', { timeout: 10000 });
 }
+
+// Click the grid cell at (row, col) in an N×N grid by computing its position
+// from the SVG bounds.
+export async function clickGridCell(page: Page, n: number, row: number, col: number) {
+  const svg = page.locator('.grid-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('grid-svg not found');
+  const cellSize = box.width / n;
+  await page.mouse.click(
+    box.x + cellSize * (col + 0.5),
+    box.y + cellSize * (row + 0.5),
+  );
+}
+
+// Install Tauri stubs with a rank_active_cage handler returning `tupleCount`
+// synthetic tuples, navigate to the app, click cell (0,0) to activate the
+// cage band, and wait for thumbnails to appear.
+export async function setupCageBandWithTuples(
+  page: Page,
+  n: number,
+  cages: any[],
+  tupleCount: number,
+) {
+  const view = makeState(n, cages);
+  await installTauriStubs(page, view);
+
+  await page.addInitScript(
+    ({ count, puzzleView }: { count: number; puzzleView: any }) => {
+      const tuples = Array.from({ length: count }, (_, i) => ({
+        tuple: [i + 1],
+        view: puzzleView,
+        total_reduction: 0,
+        newly_singleton: 0,
+      }));
+      (window as any).__tauri_invoke_handlers__ = {
+        ...((window as any).__tauri_invoke_handlers__ ?? {}),
+        rank_active_cage: () => tuples,
+      };
+    },
+    { count: tupleCount, puzzleView: view },
+  );
+
+  await waitForApp(page);
+  await clickGridCell(page, n, 0, 0);
+  await page.waitForSelector('.cage-band__thumb', { timeout: 8000 });
+}
