@@ -13,6 +13,7 @@
 
   --cage-band-width: 192px;
   --cage-band-gutter: calc(var(--cage-band-width) + 1rem);
+  --grid-size: min(calc(100vw - 3rem - var(--cage-band-gutter)), calc(100vh - 8.25rem));
 
   font-family: "Inter", system-ui, sans-serif;
   font-size: 16px;
@@ -104,7 +105,7 @@ a:hover {
 
 .grid-svg {
   display: block;
-  width: min(calc(100vw - 3rem - var(--cage-band-gutter)), calc(100vh - 8.25rem));
+  width: var(--grid-size);
   height: auto;
   aspect-ratio: 1 / 1;
 }
@@ -114,13 +115,11 @@ a:hover {
   flex-direction: row;
   align-items: baseline;
   gap: 1rem;
-  width: 100%;
-  max-width: calc(100vw - 3rem);
-  box-sizing: border-box;
 }
 
 .bottom-controls .size-control {
-  flex: 1;
+  width: var(--grid-size);
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
 }
