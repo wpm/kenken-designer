@@ -18,22 +18,18 @@ test.describe('size selector', () => {
 
   test('changing size invokes new_puzzle with the chosen n', async ({ page }) => {
     await installTauriStubs(page, makeState(4));
-    await addInvokeHandler(
-      page,
-      'new_puzzle',
-      `
-      window.__new_puzzle_n__ = args.n;
-      const n = args.n;
+    await addInvokeHandler(page, 'new_puzzle', (args) => {
+      (window as any).__new_puzzle_n__ = args.n;
+      const n: number = args.n;
       const cells = Array.from({ length: n }, () =>
         Array.from({ length: n }, () =>
-          Array.from({ length: n }, (_, i) => i + 1)
-        )
+          Array.from({ length: n }, (_, i) => i + 1),
+        ),
       );
       const next = { n, cells, cages: [], diff: { changes: [] } };
-      window.__setTauriState__(next);
+      (window as any).__setTauriState__(next);
       return next;
-      `,
-    );
+    });
     await waitForApp(page);
 
     await page.locator('.size-control select').selectOption('6');

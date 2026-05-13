@@ -78,5 +78,11 @@ test.describe('Tab and Shift+Tab cycle between cages', () => {
     await page.keyboard.press('Tab');
     expect(await getCursorX(page)).toBe(startX);
     expect(await getCursorY(page)).toBe(startY);
+
+    // Tab's default focus traversal must have been prevented — without
+    // intervening focusable content the active element stays on the body.
+    expect(
+      await page.evaluate(() => document.activeElement?.tagName ?? null),
+    ).toBe('BODY');
   });
 });

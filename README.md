@@ -46,6 +46,24 @@ inline next to the item.
 On macOS the regular Delete key reports as `Backspace`, so
 `Cmd+Shift+Backspace` also clears all cages.
 
+## Testing
+
+Rust tests live alongside the source and run via `cargo test`. End-to-end UI
+behavior is exercised by Playwright; the suite is in `tests/`.
+
+```sh
+npx playwright install chromium    # one-time browser download
+npx playwright test                # runs the suite, auto-starting trunk if needed
+```
+
+`playwright.config.ts` declares a `webServer` block that boots `trunk serve` on
+its own if port 1420 isn't already listening. The first run can take a minute
+or two while trunk performs the initial wasm build.
+
+If you have a pre-installed chromium binary you'd rather use (offline runs, a
+different revision, etc.) set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to the
+binary's path before invoking `npx playwright test`.
+
 ## Recommended IDE Setup
 
 [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
