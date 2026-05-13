@@ -70,6 +70,53 @@ export async function clickGridCell(page: Page, n: number, row: number, col: num
   );
 }
 
+// Right-click the grid cell at (row, col). Returns the {x, y} of the click
+// in viewport coordinates so tests can assert on context-menu placement.
+export async function rightClickGridCell(
+  page: Page,
+  n: number,
+  row: number,
+  col: number,
+): Promise<{ x: number; y: number }> {
+  const svg = page.locator('.grid-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('grid-svg not found');
+  const cellSize = box.width / n;
+  const x = box.x + cellSize * (col + 0.5);
+  const y = box.y + cellSize * (row + 0.5);
+  await page.mouse.click(x, y, { button: 'right' });
+  return { x, y };
+}
+
+// Read the X attribute of the SVG cursor rect.
+export async function getCursorX(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const el = document.querySelector('[data-testid="cursor"]');
+    if (!el) throw new Error('cursor element not found');
+    return parseFloat(el.getAttribute('x') ?? 'NaN');
+  });
+}
+
+// Register a per-command handler for window.__TAURI__.core.invoke, mounted
+// before the page navigates. Each call adds to the handler map; later calls
+// with the same `cmd` overwrite earlier ones.
+export async function addInvokeHandler(
+  page: Page,
+  cmd: string,
+  handlerBody: string,
+) {
+  await page.addInitScript(
+    ({ cmd, body }: { cmd: string; body: string }) => {
+      const fn = new Function('args', 'currentState', body);
+      (window as any).__tauri_invoke_handlers__ = {
+        ...((window as any).__tauri_invoke_handlers__ ?? {}),
+        [cmd]: fn,
+      };
+    },
+    { cmd, body: handlerBody },
+  );
+}
+
 // Cage background colors from src/theme.rs CAGE_PALETTE — update here if the palette changes.
 export const CAGE_PALETTE_COLORS = new Set([
   '#cfe4f2', '#d7ecd5', '#f7ecc6', '#f6d9d3',
