@@ -1,12 +1,12 @@
-use kenken::{Puzzle, N};
+use kenken::Puzzle;
 
 /// Per-cell change between two puzzle states.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CellDiff {
     /// (row, column)
     pub cell: (usize, usize),
-    pub removed: Vec<N>,
-    pub added: Vec<N>,
+    pub removed: Vec<u8>,
+    pub added: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
@@ -36,11 +36,11 @@ impl PuzzleDiff {
                 if before_vals == after_vals {
                     return None;
                 }
-                let removed: Vec<N> = before_vals
+                let removed: Vec<u8> = before_vals
                     .iter()
                     .filter(|&v| !after_vals.iter().any(|a| a == v))
                     .collect();
-                let added: Vec<N> = after_vals
+                let added: Vec<u8> = after_vals
                     .iter()
                     .filter(|&v| !before_vals.iter().any(|b| b == v))
                     .collect();

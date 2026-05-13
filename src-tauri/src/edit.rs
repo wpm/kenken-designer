@@ -78,8 +78,8 @@ mod tests {
         let result = apply_edit(&pre, EditKind::Narrowing, |_| {
             Err("injected error".to_owned())
         });
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("injected error"));
+        assert!(result.as_ref().is_err());
+        assert!(result.err().unwrap().contains("injected error"));
     }
 
     /// After removing a Given cage that forced row 0 values, widening via `apply_edit` must
