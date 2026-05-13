@@ -30,26 +30,37 @@ jobs:
             . -> target
             src-tauri -> target
 
-      - name: Keep downloaded apt packages
-        run: |
-          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
-            | sudo tee /etc/apt/apt.conf.d/99keep-debs > /dev/null
-
-      - name: Cache apt packages
+      - name: Cache installed apt files
         id: apt-cache
         uses: actions/cache@v5
         with:
           path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          key: apt-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
+            /usr/include/webkitgtk-4.1
+            /usr/include/libappindicator3-0.1
+            /usr/include/librsvg-2.0
+            /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so
+            /usr/lib/x86_64-linux-gnu/libappindicator3.so
+            /usr/lib/x86_64-linux-gnu/librsvg-2.so
+            /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc
+            /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-web-extension-4.1.pc
+            /usr/lib/x86_64-linux-gnu/pkgconfig/appindicator3-0.1.pc
+            /usr/lib/x86_64-linux-gnu/pkgconfig/librsvg-2.0.pc
+            /usr/share/gir-1.0/WebKit2-4.1.gir
+            /usr/share/gir-1.0/WebKit2WebExtension-4.1.gir
+            /usr/share/gir-1.0/AppIndicator3-0.1.gir
+            /usr/share/gir-1.0/Rsvg-2.0.gir
+            /usr/bin/patchelf
+          key: apt-installed-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
 
       - name: Install system dependencies
+        if: steps.apt-cache.outputs.cache-hit != 'true'
         run: |
-          if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
-            sudo apt-get update
-          fi
+          sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Register cached libraries
+        if: steps.apt-cache.outputs.cache-hit == 'true'
+        run: sudo ldconfig
 
       - name: Format
         run: cargo fmt --all -- --check
@@ -127,29 +138,38 @@ jobs:
             . -> target
             src-tauri -> target
 
-      - name: Keep downloaded apt packages
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
-            | sudo tee /etc/apt/apt.conf.d/99keep-debs > /dev/null
-
-      - name: Cache apt packages
+      - name: Cache installed apt files
         if: matrix.os == 'ubuntu-latest'
         id: apt-cache
         uses: actions/cache@v5
         with:
           path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          key: apt-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
+            /usr/include/webkitgtk-4.1
+            /usr/include/libappindicator3-0.1
+            /usr/include/librsvg-2.0
+            /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so
+            /usr/lib/x86_64-linux-gnu/libappindicator3.so
+            /usr/lib/x86_64-linux-gnu/librsvg-2.so
+            /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc
+            /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-web-extension-4.1.pc
+            /usr/lib/x86_64-linux-gnu/pkgconfig/appindicator3-0.1.pc
+            /usr/lib/x86_64-linux-gnu/pkgconfig/librsvg-2.0.pc
+            /usr/share/gir-1.0/WebKit2-4.1.gir
+            /usr/share/gir-1.0/WebKit2WebExtension-4.1.gir
+            /usr/share/gir-1.0/AppIndicator3-0.1.gir
+            /usr/share/gir-1.0/Rsvg-2.0.gir
+            /usr/bin/patchelf
+          key: apt-installed-${{ runner.os }}-libwebkit2gtk-4.1-libappindicator3-librsvg2-patchelf
 
       - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.apt-cache.outputs.cache-hit != 'true'
         run: |
-          if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
-            sudo apt-get update
-          fi
+          sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Register cached libraries
+        if: matrix.os == 'ubuntu-latest' && steps.apt-cache.outputs.cache-hit == 'true'
+        run: sudo ldconfig
 
       - name: Build (frontend wasm)
         shell: bash
