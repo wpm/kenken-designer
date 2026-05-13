@@ -70,22 +70,10 @@ test.describe('context menu', () => {
 
   test('Delete cage menu item dispatches remove_cage', async ({ page }) => {
     await installTauriStubs(page, makeState(N, ONE_SINGLETON));
-    await addInvokeHandler(
-      page,
-      'remove_cage',
-      `
-      window.__remove_args__ = args;
-      const n = currentState.n;
-      const cells = Array.from({ length: n }, () =>
-        Array.from({ length: n }, () =>
-          Array.from({ length: n }, (_, i) => i + 1)
-        )
-      );
-      const next = { n, cells, cages: [], diff: { changes: [] } };
-      window.__setTauriState__(next);
-      return next;
-      `,
-    );
+    await addInvokeHandler(page, 'remove_cage', (args, currentState) => {
+      (window as any).__remove_args__ = args;
+      return currentState;
+    });
     await waitForApp(page);
 
     await rightClickGridCell(page, N, 0, 0);

@@ -11,12 +11,10 @@ const N = 3;
 test.describe('undo / redo / save / open keyboard shortcuts', () => {
   test('Cmd/Ctrl+Z invokes undo', async ({ page }) => {
     await installTauriStubs(page, makeState(N));
-    await addInvokeHandler(
-      page,
-      'undo',
-      `window.__undo_calls__ = (window.__undo_calls__ ?? 0) + 1;
-       return currentState;`,
-    );
+    await addInvokeHandler(page, 'undo', (_args, currentState) => {
+      (window as any).__undo_calls__ = ((window as any).__undo_calls__ ?? 0) + 1;
+      return currentState;
+    });
     await waitForApp(page);
 
     await page.keyboard.press('Control+z');
@@ -28,18 +26,14 @@ test.describe('undo / redo / save / open keyboard shortcuts', () => {
 
   test('Cmd/Ctrl+Shift+Z invokes redo (not undo)', async ({ page }) => {
     await installTauriStubs(page, makeState(N));
-    await addInvokeHandler(
-      page,
-      'redo',
-      `window.__redo_calls__ = (window.__redo_calls__ ?? 0) + 1;
-       return currentState;`,
-    );
-    await addInvokeHandler(
-      page,
-      'undo',
-      `window.__undo_calls__ = (window.__undo_calls__ ?? 0) + 1;
-       return currentState;`,
-    );
+    await addInvokeHandler(page, 'redo', (_args, currentState) => {
+      (window as any).__redo_calls__ = ((window as any).__redo_calls__ ?? 0) + 1;
+      return currentState;
+    });
+    await addInvokeHandler(page, 'undo', (_args, currentState) => {
+      (window as any).__undo_calls__ = ((window as any).__undo_calls__ ?? 0) + 1;
+      return currentState;
+    });
     await waitForApp(page);
 
     await page.keyboard.press('Control+Shift+z');
@@ -56,11 +50,10 @@ test.describe('undo / redo / save / open keyboard shortcuts', () => {
     await page.addInitScript(() => {
       (window as any).__TAURI__.dialog.save = () => Promise.resolve('/tmp/test.kenken');
     });
-    await addInvokeHandler(
-      page,
-      'save_puzzle',
-      `window.__save_path__ = args.path; return null;`,
-    );
+    await addInvokeHandler(page, 'save_puzzle', (args) => {
+      (window as any).__save_path__ = args.path;
+      return null;
+    });
     await waitForApp(page);
 
     await page.keyboard.press('Control+s');
@@ -75,21 +68,11 @@ test.describe('undo / redo / save / open keyboard shortcuts', () => {
     await page.addInitScript(() => {
       (window as any).__TAURI__.dialog.open = () => Promise.resolve('/tmp/loaded.kenken');
     });
-    await addInvokeHandler(
-      page,
-      'load_puzzle',
-      `
-      window.__load_path__ = args.path;
+    await addInvokeHandler(page, 'load_puzzle', (args, currentState) => {
+      (window as any).__load_path__ = args.path;
       // Return a valid PuzzleView so the app updates.
-      const n = currentState.n;
-      const cells = Array.from({ length: n }, () =>
-        Array.from({ length: n }, () =>
-          Array.from({ length: n }, (_, i) => i + 1)
-        )
-      );
-      return { n, cells, cages: [], diff: { changes: [] } };
-      `,
-    );
+      return { ...(currentState as any), diff: { changes: [] } };
+    });
     await waitForApp(page);
 
     await page.keyboard.press('Control+o');

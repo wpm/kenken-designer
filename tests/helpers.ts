@@ -97,27 +97,53 @@ export async function getCursorX(page: Page): Promise<number> {
   });
 }
 
-// Register a per-command handler for window.__TAURI__.core.invoke, mounted
-// before the page navigates. Each call adds to the handler map; later calls
-// with the same `cmd` overwrite earlier ones.
+/**
+ * Register a per-command handler for `window.__TAURI__.core.invoke`, mounted
+ * before the page navigates. The handler runs in the browser, so it must be
+ * self-contained — it cannot capture variables from the surrounding closure.
+ * It receives the invoke args and the current Tauri state (kept up to date by
+ * `window.__setTauriState__`) and returns the response value.
+ *
+ * The function is serialized via `Function.prototype.toString()` after TS
+ * compilation, so TypeScript type-checks the body and strips `as any` casts
+ * before serialization — write the handler as you would any other test code.
+ *
+ * Each call adds to the handler map; later calls with the same `cmd`
+ * overwrite earlier ones.
+ */
 export async function addInvokeHandler(
   page: Page,
   cmd: string,
-  handlerBody: string,
+  handler: (args: any, currentState: any) => unknown,
 ) {
   await page.addInitScript(
-    ({ cmd, body }: { cmd: string; body: string }) => {
-      const fn = new Function('args', 'currentState', body);
+    ({ cmd, fnSource }: { cmd: string; fnSource: string }) => {
+      // eslint-disable-next-line no-new-func
+      const fn = new Function(`return (${fnSource});`)() as (
+        args: unknown,
+        state: unknown,
+      ) => unknown;
       (window as any).__tauri_invoke_handlers__ = {
         ...((window as any).__tauri_invoke_handlers__ ?? {}),
         [cmd]: fn,
       };
     },
-    { cmd, body: handlerBody },
+    { cmd, fnSource: handler.toString() },
   );
 }
 
-// Cage background colors from src/theme.rs CAGE_PALETTE — update here if the palette changes.
+// Theme colors from src/theme.rs — keep in sync when the palette changes.
+export const ACCENT_COLOR = '#1a4e7a';
+export const INK_COLOR = '#26221b';
+
+// Move-mode source-cell overlay fill (src/grid.rs render_move_overlays).
+export const MOVE_SOURCE_FILL = 'white';
+export const MOVE_SOURCE_FILL_OPACITY = '0.5';
+
+// Active-cage accent overlay opacity (src/grid.rs ACTIVE_FILL_OPACITY).
+export const ACTIVE_FILL_OPACITY = '0.16';
+
+// Cage background colors from src/theme.rs CAGE_PALETTE.
 export const CAGE_PALETTE_COLORS = new Set([
   '#cfe4f2', '#d7ecd5', '#f7ecc6', '#f6d9d3',
   '#e4d9ee', '#f4dec3', '#d6ece7', '#eed5e1',

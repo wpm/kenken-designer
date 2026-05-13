@@ -28,8 +28,7 @@ test.describe('shift+arrow draft creation', () => {
     }, [...CAGE_PALETTE_COLORS]);
 
     expect(await hasCagedCell(page)).toBe(true);
-    // A 2-cell draft has a "?" label (multiple valid op glyphs aren't shown for n=2 doubt — actually
-    // for 2-cell drafts the glyphs are "+ − × ÷"; check that the draft label is non-empty).
+    // 2-cell drafts render the joined valid-op glyphs "+ − × ÷" as the anchor label.
     const labels = await page.locator('.grid-svg text').allTextContents();
     expect(labels.some((t) => t.includes('+') || t.includes('?'))).toBe(true);
   });
@@ -92,32 +91,17 @@ test.describe('draft commit via Enter', () => {
   test('Enter on a draft opens picker and commits via insert_cage', async ({ page }) => {
     await installTauriStubs(page, makeState(N));
     // Singleton draft → cage_options returns Given only.
-    await addInvokeHandler(
-      page,
-      'cage_options',
-      `return [{ op: 'Given', targets: [1, 2, 3] }];`,
-    );
-    await addInvokeHandler(
-      page,
-      'insert_cage',
-      `
-      window.__insert_args__ = args;
-      const n = currentState.n;
-      const cells = Array.from({ length: n }, () =>
-        Array.from({ length: n }, () =>
-          Array.from({ length: n }, (_, i) => i + 1)
-        )
-      );
-      const next = {
-        n,
-        cells,
+    await addInvokeHandler(page, 'cage_options', () => [
+      { op: 'Given', targets: [1, 2, 3] },
+    ]);
+    await addInvokeHandler(page, 'insert_cage', (args, currentState) => {
+      (window as any).__insert_args__ = args;
+      return {
+        ...(currentState as any),
         cages: [{ cells: args.cells, op: args.op, target: args.target }],
         diff: { changes: [] },
       };
-      window.__setTauriState__(next);
-      return next;
-      `,
-    );
+    });
     await waitForApp(page);
 
     await clickGridCell(page, N, 1, 1);

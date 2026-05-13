@@ -38,11 +38,10 @@ test.describe('clear all cages modal', () => {
   test('Cancel button closes the modal without invoking clear_all_cages', async ({ page }) => {
     await installTauriStubs(page, makeState(N, TWO_CAGES));
     // Track whether the backend was called — it must not be on Cancel.
-    await addInvokeHandler(
-      page,
-      'clear_all_cages',
-      `window.__clear_called__ = (window.__clear_called__ ?? 0) + 1; return currentState;`,
-    );
+    await addInvokeHandler(page, 'clear_all_cages', (_args, currentState) => {
+      (window as any).__clear_called__ = ((window as any).__clear_called__ ?? 0) + 1;
+      return currentState;
+    });
     await waitForApp(page);
 
     await page.keyboard.press('Control+Shift+Delete');
@@ -68,23 +67,13 @@ test.describe('clear all cages modal', () => {
 
   test('Confirm button invokes clear_all_cages and refreshes the view', async ({ page }) => {
     await installTauriStubs(page, makeState(N, TWO_CAGES));
-    // Stub clear_all_cages to return an empty puzzle (no cages).
-    await addInvokeHandler(
-      page,
-      'clear_all_cages',
-      `
-      window.__clear_called__ = (window.__clear_called__ ?? 0) + 1;
-      const n = currentState.n;
-      const cells = Array.from({ length: n }, () =>
-        Array.from({ length: n }, () =>
-          Array.from({ length: n }, (_, i) => i + 1)
-        )
-      );
-      const next = { n, cells, cages: [], diff: { changes: [] } };
-      window.__setTauriState__(next);
-      return next;
-      `,
-    );
+    // Stub clear_all_cages to record the call. Returning currentState keeps
+    // the UI consistent; we don't need to construct an empty-cages view here
+    // because the test only asserts that the handler ran exactly once.
+    await addInvokeHandler(page, 'clear_all_cages', (_args, currentState) => {
+      (window as any).__clear_called__ = ((window as any).__clear_called__ ?? 0) + 1;
+      return currentState;
+    });
     await waitForApp(page);
 
     await page.keyboard.press('Control+Shift+Delete');

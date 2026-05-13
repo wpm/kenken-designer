@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import {
   addInvokeHandler,
   clickGridCell,
@@ -13,27 +13,19 @@ const PAIR_CAGE = [{ cells: [[0, 0], [0, 1]], op: 'Add', target: 3 }];
 
 // Stub cage_options so the picker has data to show. Returns valid ops/targets
 // for a 2-cell cage in a 3×3 puzzle (Add 3..5, Sub 1..2, Mul 2..6, Div 2..3).
-async function stubBinaryCageOptions(page: any) {
-  await addInvokeHandler(
-    page,
-    'cage_options',
-    `
-    return [
-      { op: 'Add', targets: [3, 4, 5] },
-      { op: 'Sub', targets: [1, 2] },
-      { op: 'Mul', targets: [2, 3, 4, 6] },
-      { op: 'Div', targets: [2, 3] },
-    ];
-    `,
-  );
+async function stubBinaryCageOptions(page: Page) {
+  await addInvokeHandler(page, 'cage_options', () => [
+    { op: 'Add', targets: [3, 4, 5] },
+    { op: 'Sub', targets: [1, 2] },
+    { op: 'Mul', targets: [2, 3, 4, 6] },
+    { op: 'Div', targets: [2, 3] },
+  ]);
 }
 
-async function stubSingletonCageOptions(page: any) {
-  await addInvokeHandler(
-    page,
-    'cage_options',
-    `return [{ op: 'Given', targets: [1, 2, 3] }];`,
-  );
+async function stubSingletonCageOptions(page: Page) {
+  await addInvokeHandler(page, 'cage_options', () => [
+    { op: 'Given', targets: [1, 2, 3] },
+  ]);
 }
 
 test.describe('operator entry picker', () => {
@@ -76,8 +68,8 @@ test.describe('operator entry picker', () => {
     await waitForApp(page);
 
     await clickGridCell(page, N, 0, 0);
-    // Press "+" with shift since US keyboards usually need Shift for "+".
-    // The dispatcher accepts the resulting key, not the keystroke.
+    // Pressing "+" directly: Playwright's `Shift+=` sends `KeyboardEvent.key === "="`
+    // (not "+"), so we use the character form which translates to the right key event.
     await page.keyboard.press('+');
 
     // TargetPicker dropdown should render text rows with "3+", "4+", "5+".
@@ -94,14 +86,10 @@ test.describe('operator entry picker', () => {
     await stubBinaryCageOptions(page);
 
     // Stub set_cage_operation to record the call and return the original state.
-    await addInvokeHandler(
-      page,
-      'set_cage_operation',
-      `
-      window.__set_op_args__ = args;
+    await addInvokeHandler(page, 'set_cage_operation', (args, currentState) => {
+      (window as any).__set_op_args__ = args;
       return currentState;
-      `,
-    );
+    });
 
     await waitForApp(page);
 

@@ -1,9 +1,13 @@
 import { test, expect } from '@playwright/test';
 import {
+  ACCENT_COLOR,
+  MOVE_SOURCE_FILL,
+  MOVE_SOURCE_FILL_OPACITY,
   addInvokeHandler,
   clickGridCell,
   installTauriStubs,
   makeState,
+  rightClickGridCell,
   waitForApp,
 } from './helpers';
 
@@ -14,6 +18,13 @@ const TWO_ADJACENT = [
   { cells: [[1, 0], [1, 1]], op: 'Add', target: 5 },
 ];
 
+const SOURCE_OVERLAY_SELECTOR =
+  `.grid-svg rect[fill="${MOVE_SOURCE_FILL}"][fill-opacity="${MOVE_SOURCE_FILL_OPACITY}"]`;
+const TARGET_BORDER_SELECTOR =
+  `.grid-svg rect[stroke="${ACCENT_COLOR}"][stroke-width="1.0"]`;
+const SELECTED_TARGET_SELECTOR =
+  `.grid-svg rect[stroke="${ACCENT_COLOR}"][stroke-width="2.0"]`;
+
 test.describe('move mode', () => {
   test('pressing M on a movable cell shows source overlay and target borders', async ({ page }) => {
     await installTauriStubs(page, makeState(N, TWO_ADJACENT));
@@ -23,16 +34,10 @@ test.describe('move mode', () => {
     await page.keyboard.press('m');
 
     // Source overlay: a white rect with 0.5 fill-opacity inside .grid-svg.
-    const sourceOverlay = page.locator(
-      '.grid-svg rect[fill="white"][fill-opacity="0.5"]',
-    );
-    await expect(sourceOverlay).toHaveCount(1);
+    await expect(page.locator(SOURCE_OVERLAY_SELECTOR)).toHaveCount(1);
 
     // Target cage cells should be outlined (no dash since none selected yet).
-    const targetBorders = page.locator(
-      '.grid-svg rect[stroke="#1a4e7a"][stroke-width="1.0"]',
-    );
-    await expect(targetBorders).toHaveCount(2); // both cells of target cage
+    await expect(page.locator(TARGET_BORDER_SELECTOR)).toHaveCount(2);
   });
 
   test('Tab in move mode selects a target cage (dashed border)', async ({ page }) => {
@@ -44,29 +49,23 @@ test.describe('move mode', () => {
     await page.keyboard.press('Tab');
 
     // After Tab, the selected target gets stroke-width="2.0" + dash.
-    const selectedBorders = page.locator(
-      '.grid-svg rect[stroke="#1a4e7a"][stroke-width="2.0"]',
-    );
+    const selectedBorders = page.locator(SELECTED_TARGET_SELECTOR);
     await expect(selectedBorders).toHaveCount(2);
     await expect(selectedBorders.first()).toHaveAttribute('stroke-dasharray', '4,3');
   });
 
   test('Escape exits move mode without invoking move_cell', async ({ page }) => {
     await installTauriStubs(page, makeState(N, TWO_ADJACENT));
-    await addInvokeHandler(
-      page,
-      'move_cell',
-      `window.__move_called__ = (window.__move_called__ ?? 0) + 1;
-       return { view: currentState, drafts: [] };`,
-    );
+    await addInvokeHandler(page, 'move_cell', (_args, currentState) => {
+      (window as any).__move_called__ = ((window as any).__move_called__ ?? 0) + 1;
+      return { view: currentState, drafts: [] };
+    });
     await waitForApp(page);
 
     await clickGridCell(page, N, 0, 0);
     await page.keyboard.press('m');
 
-    const sourceOverlay = page.locator(
-      '.grid-svg rect[fill="white"][fill-opacity="0.5"]',
-    );
+    const sourceOverlay = page.locator(SOURCE_OVERLAY_SELECTOR);
     await expect(sourceOverlay).toHaveCount(1);
 
     await page.keyboard.press('Escape');
@@ -77,14 +76,10 @@ test.describe('move mode', () => {
 
   test('Tab + Enter in move mode invokes move_cell with the chosen target', async ({ page }) => {
     await installTauriStubs(page, makeState(N, TWO_ADJACENT));
-    await addInvokeHandler(
-      page,
-      'move_cell',
-      `
-      window.__move_args__ = args;
+    await addInvokeHandler(page, 'move_cell', (args, currentState) => {
+      (window as any).__move_args__ = args;
       return { view: currentState, drafts: [] };
-      `,
-    );
+    });
     await waitForApp(page);
 
     await clickGridCell(page, N, 0, 0);
@@ -106,22 +101,9 @@ test.describe('move mode', () => {
     await installTauriStubs(page, makeState(N, TWO_ADJACENT));
     await waitForApp(page);
 
-    // Right-click on (0,0)
-    const svg = page.locator('.grid-svg');
-    const box = await svg.boundingBox();
-    if (!box) throw new Error('grid-svg not found');
-    const cellSize = box.width / N;
-    await page.mouse.click(
-      box.x + cellSize * 0.5,
-      box.y + cellSize * 0.5,
-      { button: 'right' },
-    );
-
+    await rightClickGridCell(page, N, 0, 0);
     await page.getByText('Move cell').click();
 
-    const sourceOverlay = page.locator(
-      '.grid-svg rect[fill="white"][fill-opacity="0.5"]',
-    );
-    await expect(sourceOverlay).toHaveCount(1);
+    await expect(page.locator(SOURCE_OVERLAY_SELECTOR)).toHaveCount(1);
   });
 });
