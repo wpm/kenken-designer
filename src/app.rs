@@ -175,33 +175,29 @@ fn listen_for_puzzle_updates(
     cb.forget();
 }
 
+/// Returns the currently focused element if it is a text input (INPUT,
+/// TEXTAREA, SELECT), otherwise None. Single DOM traversal shared by
+/// is_text_input_focused() and blur_focused_text_input().
+fn focused_text_input() -> Option<web_sys::HtmlElement> {
+    let doc = web_sys::window()?.document()?;
+    let el = doc.active_element()?;
+    if is_text_input_tag(&el.tag_name()) {
+        el.dyn_into::<web_sys::HtmlElement>().ok()
+    } else {
+        None
+    }
+}
+
 fn is_text_input_focused() -> bool {
-    let Some(window) = web_sys::window() else {
-        return false;
-    };
-    let Some(doc) = window.document() else {
-        return false;
-    };
-    let Some(element) = doc.active_element() else {
-        return false;
-    };
-    is_text_input_tag(&element.tag_name())
+    focused_text_input().is_some()
 }
 
 /// Blur any focused text input so keyboard shortcuts work after clicking a
 /// non-focusable grid cell. `WKWebView` (Tauri/macOS) does not auto-blur a
 /// focused <select> when the user clicks a non-focusable SVG element.
 fn blur_focused_text_input() {
-    if !is_text_input_focused() {
-        return;
-    }
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    if let Some(el) = doc.active_element() {
-        if let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>() {
-            let _ = html_el.blur();
-        }
+    if let Some(el) = focused_text_input() {
+        let _ = el.blur();
     }
 }
 
@@ -367,6 +363,7 @@ pub fn App() -> impl IntoView {
     });
 
     let on_cell_right_click = Callback::new(move |(r, c, x, y): (usize, usize, f64, f64)| {
+        blur_focused_text_input();
         cursor.set((r, c));
         set_active_cage_for_cell(puzzle, active_cage, r, c);
         let items = puzzle.with_untracked(|opt| {
