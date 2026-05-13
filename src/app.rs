@@ -264,6 +264,7 @@ fn dispatch_key(key: &str, shift: bool, modifier: bool, in_text_input: bool) -> 
         "Escape" => KeyAction::Escape,
         "Delete" => KeyAction::Delete,
         " " | "Spacebar" | "c" | "C" => KeyAction::Splinter,
+        "Enter" if shift => KeyAction::Splinter,
         "m" | "M" => KeyAction::MoveCell,
         _ => KeyAction::Ignore,
     }
@@ -1505,6 +1506,14 @@ mod tests {
         assert_eq!(
             dispatch_key("Backspace", true, true, true),
             KeyAction::Ignore
+        );
+    }
+
+    #[test]
+    fn dispatch_key_returns_splinter_for_shift_enter() {
+        assert_eq!(
+            dispatch_key("Enter", true, false, false),
+            KeyAction::Splinter
         );
     }
 }

@@ -70,6 +70,21 @@ export async function clickGridCell(page: Page, n: number, row: number, col: num
   );
 }
 
+// Cage background colors from src/theme.rs CAGE_PALETTE — update here if the palette changes.
+export const CAGE_PALETTE_COLORS = new Set([
+  '#cfe4f2', '#d7ecd5', '#f7ecc6', '#f6d9d3',
+  '#e4d9ee', '#f4dec3', '#d6ece7', '#eed5e1',
+]);
+
+// Returns true if any SVG rect in the grid has a palette fill (indicating a caged cell).
+export async function hasCagedCell(page: Page): Promise<boolean> {
+  return page.evaluate((palette) => {
+    const paletteSet = new Set(palette);
+    const rects = Array.from(document.querySelectorAll('.grid-svg rect'));
+    return rects.some((r) => paletteSet.has(r.getAttribute('fill') ?? ''));
+  }, [...CAGE_PALETTE_COLORS]);
+}
+
 // Install Tauri stubs with a rank_active_cage handler returning `tupleCount`
 // synthetic tuples, navigate to the app, click cell (0,0) to activate the
 // cage band, and wait for thumbnails to appear.
