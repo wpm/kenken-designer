@@ -1,9 +1,9 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { installTauriStubs, makeState, waitForApp, clickGridCell, hasCagedCell, CAGE_PALETTE_COLORS } from './helpers';
 
 const N = 3;
 
-test('Shift+Enter on uncovered cell creates singleton cage draft', async ({ page }: { page: Page }) => {
+test('Shift+Enter on uncovered cell creates singleton cage draft', async ({ page }) => {
   const state = makeState(N);
   await installTauriStubs(page, state);
   await waitForApp(page);
@@ -21,7 +21,7 @@ test('Shift+Enter on uncovered cell creates singleton cage draft', async ({ page
   expect(await hasCagedCell(page)).toBe(true);
 });
 
-test('Shift+Enter on uncovered cell shows ? draft label', async ({ page }: { page: Page }) => {
+test('Shift+Enter on uncovered cell shows ? draft label', async ({ page }) => {
   const state = makeState(N);
   await installTauriStubs(page, state);
   await waitForApp(page);
