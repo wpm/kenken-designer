@@ -697,7 +697,9 @@ pub fn CageBand(
             selected_idx.set(None);
             blur_active();
         }
-        "Enter" => {
+        // Plain Enter commits the selected tuple. Shift+Enter is reserved for
+        // the global "splinter cursor cell" shortcut, so let it bubble.
+        "Enter" if !ev.shift_key() => {
             if focused_thumb_idx().is_none() {
                 return;
             }

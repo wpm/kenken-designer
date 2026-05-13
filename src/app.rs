@@ -196,12 +196,15 @@ const fn is_text_input_tag(tag: &str) -> bool {
 
 /// Keys the cage band's local keydown handler owns when a thumb has focus —
 /// the global dispatcher must defer to it so the same press doesn't also
-/// move the grid cursor or open operator entry.
-const fn is_band_owned_key(key: &str) -> bool {
-    matches!(
-        key.as_bytes(),
-        b"ArrowUp" | b"ArrowDown" | b"Enter" | b"Escape"
-    )
+/// move the grid cursor or open operator entry. Shift+Enter is intentionally
+/// excluded so it always splinters the cursor cell regardless of whether a
+/// thumb has focus.
+const fn is_band_owned_key(key: &str, shift: bool) -> bool {
+    match key.as_bytes() {
+        b"ArrowUp" | b"ArrowDown" | b"Escape" => true,
+        b"Enter" => !shift,
+        _ => false,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -536,7 +539,10 @@ fn install_keydown_handler(
         let modifier = ev.meta_key() || ev.ctrl_key();
         let key = ev.key();
 
-        if !modifier && is_band_owned_key(&key) && cage_band::focused_thumb_idx().is_some() {
+        if !modifier
+            && is_band_owned_key(&key, ev.shift_key())
+            && cage_band::focused_thumb_idx().is_some()
+        {
             return;
         }
 
@@ -1460,20 +1466,25 @@ mod tests {
 
     #[test]
     fn is_band_owned_key_matches_arrow_enter_escape() {
-        assert!(is_band_owned_key("ArrowUp"));
-        assert!(is_band_owned_key("ArrowDown"));
-        assert!(is_band_owned_key("Enter"));
-        assert!(is_band_owned_key("Escape"));
+        assert!(is_band_owned_key("ArrowUp", false));
+        assert!(is_band_owned_key("ArrowDown", false));
+        assert!(is_band_owned_key("Enter", false));
+        assert!(is_band_owned_key("Escape", false));
+    }
+
+    #[test]
+    fn is_band_owned_key_releases_shift_enter_to_global_handler() {
+        assert!(!is_band_owned_key("Enter", true));
     }
 
     #[test]
     fn is_band_owned_key_rejects_other_keys() {
-        assert!(!is_band_owned_key("ArrowLeft"));
-        assert!(!is_band_owned_key("ArrowRight"));
-        assert!(!is_band_owned_key("Tab"));
-        assert!(!is_band_owned_key(" "));
-        assert!(!is_band_owned_key("a"));
-        assert!(!is_band_owned_key(""));
+        assert!(!is_band_owned_key("ArrowLeft", false));
+        assert!(!is_band_owned_key("ArrowRight", false));
+        assert!(!is_band_owned_key("Tab", false));
+        assert!(!is_band_owned_key(" ", false));
+        assert!(!is_band_owned_key("a", false));
+        assert!(!is_band_owned_key("", false));
     }
 
     #[test]
