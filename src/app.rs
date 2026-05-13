@@ -177,7 +177,7 @@ fn listen_for_puzzle_updates(
 
 /// Returns the currently focused element if it is a text input (INPUT,
 /// TEXTAREA, SELECT), otherwise None. Single DOM traversal shared by
-/// is_text_input_focused() and blur_focused_text_input().
+/// `is_text_input_focused()` and `blur_focused_text_input()`.
 fn focused_text_input() -> Option<web_sys::HtmlElement> {
     let doc = web_sys::window()?.document()?;
     let el = doc.active_element()?;
