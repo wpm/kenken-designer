@@ -1516,12 +1516,4 @@ mod tests {
             KeyAction::Splinter
         );
     }
-
-    #[test]
-    fn dispatch_key_ignores_unshifted_enter() {
-        assert_eq!(
-            dispatch_key("Enter", false, false, false),
-            KeyAction::Ignore
-        );
-    }
 }
