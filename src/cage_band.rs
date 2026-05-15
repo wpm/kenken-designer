@@ -39,23 +39,13 @@ struct ApplyNarrowingArgs {
     tuple: Vec<u32>,
 }
 
-fn push_band_error(e: &wasm_bindgen::JsValue) {
-    if let Some(toasts) = leptos::prelude::use_context::<crate::toast::Toasts>() {
-        crate::toast::push_error(
-            toasts,
-            e.as_string()
-                .unwrap_or_else(|| "An unknown error occurred".to_string()),
-        );
-    }
-}
-
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
 async fn call_rank_active_cage(anchor: (usize, usize)) -> Option<Vec<RankedTuple>> {
     let args = serde_wasm_bindgen::to_value(&RankArgs { anchor }).ok()?;
     match invoke("rank_active_cage", args).await {
         Ok(result) => serde_wasm_bindgen::from_value(result).ok(),
         Err(ref e) => {
-            push_band_error(e);
+            crate::toast::push_js_error(e);
             None
         }
     }
@@ -67,7 +57,7 @@ async fn call_apply_narrowing(anchor: (usize, usize), tuple: Vec<u32>) -> Option
     match invoke("apply_narrowing", args).await {
         Ok(result) => serde_wasm_bindgen::from_value(result).ok(),
         Err(ref e) => {
-            push_band_error(e);
+            crate::toast::push_js_error(e);
             None
         }
     }

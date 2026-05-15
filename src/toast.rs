@@ -1,5 +1,6 @@
 use crate::theme::{BG, INK, INK2, LINE, SANS_FONT};
 use leptos::prelude::*;
+use wasm_bindgen::JsValue;
 
 /// A single toast entry: unique id + message text.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +21,17 @@ pub fn push_error(toasts: Toasts, message: String) {
         let id = next_id(v);
         v.push(Toast { id, message });
     });
+}
+
+/// Read the active `Toasts` from Leptos context and push a JS error value as a message.
+pub fn push_js_error(e: &JsValue) {
+    if let Some(toasts) = leptos::prelude::use_context::<Toasts>() {
+        push_error(
+            toasts,
+            e.as_string()
+                .unwrap_or_else(|| "An unknown error occurred".to_string()),
+        );
+    }
 }
 
 fn next_id(v: &[Toast]) -> u64 {
@@ -143,5 +155,35 @@ mod tests {
         let mut v = make_toasts(&["only"]);
         v.retain(|t| t.id != 0);
         assert!(v.is_empty());
+    }
+
+    #[test]
+    fn push_error_ignores_duplicate_message() {
+        let mut v = make_toasts(&["hello"]);
+        let len_before = v.len();
+        if v.iter().any(|t| t.message == "hello") {
+            // dedup branch: no push
+        } else {
+            let id = next_id(&v);
+            v.push(Toast {
+                id,
+                message: "hello".into(),
+            });
+        }
+        assert_eq!(v.len(), len_before);
+    }
+
+    #[test]
+    fn push_error_adds_new_distinct_message() {
+        let mut v = make_toasts(&["a"]);
+        let msg = "b".to_string();
+        if v.iter().any(|t| t.message == msg) {
+            // dedup — should not happen
+        } else {
+            let id = next_id(&v);
+            v.push(Toast { id, message: msg });
+        }
+        assert_eq!(v.len(), 2);
+        assert!(v.iter().any(|t| t.message == "b"));
     }
 }

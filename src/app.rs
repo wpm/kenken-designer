@@ -146,16 +146,6 @@ pub struct EditResult {
     pub drafts: Vec<DraftCage>,
 }
 
-fn push_invoke_error(e: &JsValue) {
-    if let Some(toasts) = use_context::<crate::toast::Toasts>() {
-        crate::toast::push_error(
-            toasts,
-            e.as_string()
-                .unwrap_or_else(|| "An unknown error occurred".to_string()),
-        );
-    }
-}
-
 /// Generic Tauri invoke wrapper. Reads `Toasts` from context to report errors.
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
 async fn invoke_cmd<A: Serialize, R: serde::de::DeserializeOwned>(cmd: &str, args: A) -> Option<R> {
@@ -163,7 +153,7 @@ async fn invoke_cmd<A: Serialize, R: serde::de::DeserializeOwned>(cmd: &str, arg
     match invoke(cmd, args).await {
         Ok(value) => serde_wasm_bindgen::from_value(value).ok(),
         Err(ref e) => {
-            push_invoke_error(e);
+            crate::toast::push_js_error(e);
             None
         }
     }
@@ -826,7 +816,7 @@ fn handle_save(current_path: RwSignal<Option<String>>, force_prompt: bool) {
                     current_path.set(Some(path));
                 }
             }
-            Err(ref e) => push_invoke_error(e),
+            Err(ref e) => crate::toast::push_js_error(e),
         }
     });
 }
@@ -851,7 +841,7 @@ fn handle_open(
                     current_path.set(Some(path));
                 }
             }
-            Err(ref e) => push_invoke_error(e),
+            Err(ref e) => crate::toast::push_js_error(e),
         }
     });
 }
