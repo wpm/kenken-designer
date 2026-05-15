@@ -6,7 +6,8 @@ mod view;
 
 use std::sync::Mutex;
 
-use kenken::{Delta, Puzzle, Values};
+use kenken::constraints::cover::Cover;
+use kenken::{Delta, Fill, Puzzle};
 use tauri::image::Image;
 use tauri::menu::{
     AboutMetadata, IsMenuItem, Menu, MenuEvent, MenuItemBuilder, PredefinedMenuItem, Submenu,
@@ -272,7 +273,7 @@ fn apply_narrowing(
         .map_err(|e| format!("{e:?}"))?
         .current()
         .clone();
-    let cells = cage_edit::cage_at_or_err(&puzzle, anchor)?.cells().to_vec();
+    let cells = cage_edit::cage_at_or_err(&puzzle, anchor)?.cells();
     if cells.len() != tuple.len() {
         return Err(format!(
             "tuple length {} does not match cage size {}",
@@ -283,9 +284,11 @@ fn apply_narrowing(
     let mut delta = Delta::identity(puzzle.n()).map_err(|e| format!("{e:?}"))?;
     for (cell, v) in cells.iter().zip(tuple.iter()) {
         let val = u8::try_from(*v).map_err(|e| format!("value out of range: {e}"))?;
-        delta = delta.set(*cell, Values::new([val]));
+        delta = delta.set(*cell, Fill::new([val]));
     }
-    Ok(PuzzleView::from(&puzzle.narrow(&delta)))
+    Ok(PuzzleView::from(
+        &puzzle.narrow(&delta).map_err(|e| format!("{e:?}"))?,
+    ))
 }
 
 #[allow(clippy::too_many_lines)] // Per-OS submenu construction is the long part

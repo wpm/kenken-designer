@@ -43,11 +43,12 @@ fn rebuild_from_constraints(p: &Puzzle) -> Result<Puzzle, String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use kenken::{Cage, Cell, Operation, Polyomino, Puzzle};
+    use kenken::constraints::cover::Polyomino;
+    use kenken::{Cage, Cell, Operation, Puzzle};
 
     fn given_cage_at(cell: (usize, usize), value: u16, n: u8) -> Cage {
         let cells = vec![Cell::new(cell.0, cell.1)];
-        Cage::new(n, Polyomino::new(&cells), Operation::Given(value))
+        Cage::new(n, Polyomino::new(&cells).unwrap(), Operation::Given(value))
     }
 
     /// After inserting Given(1) at (0,0), propagation must eliminate 1 from (0,1)'s fill

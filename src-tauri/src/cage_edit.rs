@@ -1,4 +1,5 @@
-use kenken::{Cage, Cell, Operation, Operator, Polyomino, Puzzle};
+use kenken::constraints::cover::{is_edge_connected_component, Cover, Polyomino};
+use kenken::{Cage, Cell, Operation, Operator, Puzzle};
 
 use crate::view::{CageOption, DraftCage, OpKind};
 
@@ -39,8 +40,8 @@ pub fn cage_options(cells: &[(usize, usize)], n: usize) -> Vec<CageOption> {
         .map(|op| CageOption {
             op: op_kind_of(op),
             targets: Cage::valid_targets(&cells_vec, op, n_u8)
-                .map(target_of)
-                .collect(),
+                .map(|it| it.map(target_of).collect())
+                .unwrap_or_default(),
         })
         .collect()
 }
@@ -69,7 +70,7 @@ fn puzzle_size_u8(puzzle: &Puzzle) -> Result<u8, String> {
 }
 
 fn cells_to_vec(poly: &Polyomino) -> Vec<(usize, usize)> {
-    poly.as_slice().iter().map(|c| (c.row, c.column)).collect()
+    poly.cells().iter().map(|c| (c.row, c.column)).collect()
 }
 
 pub fn cage_at_or_err(puzzle: &Puzzle, anchor: (usize, usize)) -> Result<&Cage, String> {
@@ -116,12 +117,15 @@ pub fn do_insert_cage(
 ) -> Result<Puzzle, String> {
     let n = puzzle_size_u8(puzzle)?;
     let cells_vec: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
-    let poly = Polyomino::new(&cells_vec);
-    if poly.is_empty() {
+    if cells_vec.is_empty() {
         return Err("cage must have at least one cell".into());
     }
+    if !is_edge_connected_component(&cells_vec) {
+        return Err("cage cells must be edge-connected".into());
+    }
+    let poly = Polyomino::new(&cells_vec).map_err(|e| format!("{e:?}"))?;
     let operation = build_operation(op, target);
-    if !Cage::is_valid(poly.as_slice(), operation, n) {
+    if !Cage::is_valid(&poly.cells(), operation, n).map_err(|e| format!("{e:?}"))? {
         return Err(format!(
             "{op:?}({target}) is not a valid operation for a {}-cell cage on a {n}x{n} grid",
             poly.len()
@@ -164,7 +168,16 @@ pub fn do_extend_cage(
     let cage = cage_at_or_err(puzzle, anchor)?;
     let op = cage.operation();
     let old_poly = cage.polyomino().clone();
-    let new_poly = old_poly.extend(target).map_err(|e| format!("{e:?}"))?;
+    if !target
+        .neighbors_4()
+        .any(|nb| old_poly.cells().contains(&nb))
+    {
+        return Err(format!(
+            "cell ({}, {}) is not adjacent to cage",
+            cell.0, cell.1
+        ));
+    }
+    let new_poly = old_poly.insert(target).map_err(|e| format!("{e:?}"))?;
     rebuild_with_shape(puzzle, &old_poly, new_poly, op, n)
 }
 
@@ -180,7 +193,15 @@ pub fn do_shrink_cage(
     if old_poly.len() == 1 {
         return Ok((puzzle.clone().remove_cage(&old_poly), None));
     }
-    let new_poly = old_poly.without(target).map_err(|e| format!("{e:?}"))?;
+    let remaining: Vec<Cell> = old_poly
+        .cells()
+        .into_iter()
+        .filter(|c| c != &target)
+        .collect();
+    if !is_edge_connected_component(&remaining) {
+        return Err(format!("removing {target:?} would disconnect the cage"));
+    }
+    let new_poly = old_poly.remove(target).map_err(|e| format!("{e:?}"))?;
     rebuild_with_shape(puzzle, &old_poly, new_poly, op, n)
 }
 
@@ -199,9 +220,9 @@ pub fn do_merge_cages(
     let poly_a = cage_a.polyomino().clone();
     let poly_b = cage_b.polyomino().clone();
 
-    let mut all_cells: Vec<Cell> = poly_a.as_slice().to_vec();
-    all_cells.extend_from_slice(poly_b.as_slice());
-    let merged = Polyomino::new(&all_cells);
+    let mut all_cells: Vec<Cell> = poly_a.cells();
+    all_cells.extend(poly_b.cells());
+    let merged = Polyomino::new(&all_cells).map_err(|e| format!("{e:?}"))?;
 
     let intermediate = puzzle.clone().remove_cage(&poly_a).remove_cage(&poly_b);
     reinsert_or_draft(intermediate, merged, op, n)
@@ -228,8 +249,15 @@ pub fn legal_move_targets(puzzle: &Puzzle, cell: (usize, usize)) -> Vec<(usize, 
     let src_poly = src_cage.polyomino().clone();
 
     // If src has more than one cell, check that removing `cell` keeps it connected.
-    if src_poly.len() > 1 && src_poly.without(cell_obj).is_err() {
-        return Vec::new();
+    if src_poly.len() > 1 {
+        let remaining: Vec<Cell> = src_poly
+            .cells()
+            .into_iter()
+            .filter(|c| c != &cell_obj)
+            .collect();
+        if !is_edge_connected_component(&remaining) {
+            return Vec::new();
+        }
     }
 
     let n = puzzle.n();
@@ -243,7 +271,7 @@ pub fn legal_move_targets(puzzle: &Puzzle, cell: (usize, usize)) -> Vec<(usize, 
             if tgt_cage.polyomino() != &src_poly {
                 let anchor = tgt_cage
                     .polyomino()
-                    .as_slice()
+                    .cells()
                     .first()
                     .map_or((0, 0), |c| (c.row, c.column));
                 if !targets.contains(&anchor) {
@@ -268,14 +296,20 @@ fn apply_cell_transfer(
     tgt_poly: &Polyomino,
     tgt_op: Operation,
 ) -> Result<(Puzzle, Vec<DraftCage>), String> {
-    let new_tgt_poly = tgt_poly.extend(cell_obj).map_err(|e| format!("{e:?}"))?;
+    if !cell_obj
+        .neighbors_4()
+        .any(|nb| tgt_poly.cells().contains(&nb))
+    {
+        return Err("cell is not adjacent to target cage".into());
+    }
+    let new_tgt_poly = tgt_poly.insert(cell_obj).map_err(|e| format!("{e:?}"))?;
     let intermediate = puzzle.clone().remove_cage(src_poly).remove_cage(tgt_poly);
     let mut drafts = Vec::new();
 
     let next = if src_poly.len() == 1 {
         intermediate
     } else {
-        let new_src_poly = src_poly.without(cell_obj).map_err(|e| format!("{e:?}"))?;
+        let new_src_poly = src_poly.remove(cell_obj).map_err(|e| format!("{e:?}"))?;
         if op_legal_for_size(src_op, new_src_poly.len()) {
             intermediate
                 .insert_cage(Cage::new(n, new_src_poly, src_op))
@@ -322,11 +356,21 @@ pub fn do_move_cell(
     let tgt_op = tgt_cage.operation();
     let tgt_poly = tgt_cage.polyomino().clone();
 
-    if !cell_obj.neighbors_4().any(|nb| tgt_poly.contains_cell(nb)) {
+    if !cell_obj
+        .neighbors_4()
+        .any(|nb| tgt_poly.cells().contains(&nb))
+    {
         return Err("cell is not adjacent to target cage".into());
     }
-    if src_poly.len() > 1 && src_poly.without(cell_obj).is_err() {
-        return Err("removing cell would disconnect source cage".into());
+    if src_poly.len() > 1 {
+        let remaining: Vec<Cell> = src_poly
+            .cells()
+            .into_iter()
+            .filter(|c| c != &cell_obj)
+            .collect();
+        if !is_edge_connected_component(&remaining) {
+            return Err("removing cell would disconnect source cage".into());
+        }
     }
 
     apply_cell_transfer(puzzle, n, cell_obj, &src_poly, src_op, &tgt_poly, tgt_op)
@@ -360,21 +404,25 @@ pub fn do_flip_cell(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use kenken::{Cage, Operation, Polyomino};
+    use kenken::{Cage, Operation};
 
     fn add_cage(cells: &[(usize, usize)], target: u16, n: u8) -> Cage {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Add(target))
+        Cage::new(n, Polyomino::new(&cells).unwrap(), Operation::Add(target))
     }
 
     fn sub_cage(cells: &[(usize, usize)], target: u16, n: u8) -> Cage {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Subtract(target))
+        Cage::new(
+            n,
+            Polyomino::new(&cells).unwrap(),
+            Operation::Subtract(target),
+        )
     }
 
     fn given_cage(cell: (usize, usize), value: u16, n: u8) -> Cage {
         let cells = vec![Cell::new(cell.0, cell.1)];
-        Cage::new(n, Polyomino::new(&cells), Operation::Given(value))
+        Cage::new(n, Polyomino::new(&cells).unwrap(), Operation::Given(value))
     }
 
     #[test]
@@ -411,7 +459,7 @@ mod tests {
 
     #[test]
     fn cage_options_two_cells_yields_all_binary_operators() {
-        let options = cage_options(&[(0, 0), (1, 1)], 4);
+        let options = cage_options(&[(0, 0), (0, 1)], 4);
         let ops: Vec<OpKind> = options.iter().map(|o| o.op).collect();
         assert_eq!(
             ops,
@@ -962,6 +1010,10 @@ mod tests {
 
     fn mul_cage(cells: &[(usize, usize)], target: u16, n: u8) -> Cage {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
-        Cage::new(n, Polyomino::new(&cells), Operation::Multiply(target))
+        Cage::new(
+            n,
+            Polyomino::new(&cells).unwrap(),
+            Operation::Multiply(target),
+        )
     }
 }

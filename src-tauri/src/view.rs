@@ -1,4 +1,5 @@
-use kenken::{Operation, Puzzle, Values};
+use kenken::constraints::cover::Cover;
+use kenken::{Fill, Operation, Puzzle};
 
 use crate::diff::PuzzleDiff;
 
@@ -74,7 +75,7 @@ impl From<&Puzzle> for PuzzleView {
     fn from(p: &Puzzle) -> Self {
         let n = p.n();
         let mut cells = vec![vec![Vec::new(); n]; n];
-        for (cell, values) in p.grid().iter_with_values() {
+        for (cell, values) in p.grid().entries() {
             cells[cell.row][cell.column] = values.iter().collect();
         }
 
@@ -83,8 +84,8 @@ impl From<&Puzzle> for PuzzleView {
         for cage in p.cages() {
             let tuples = cage.tuples();
             for (pos, cell) in cage.cells().iter().enumerate() {
-                let allowed: Values = tuples.iter().map(|t| t[pos]).collect();
-                let current: Values = cells[cell.row][cell.column].iter().copied().collect();
+                let allowed: Fill = tuples.iter().map(|t| t[pos]).collect();
+                let current: Fill = cells[cell.row][cell.column].iter().copied().collect();
                 cells[cell.row][cell.column] = (current & allowed).iter().collect();
             }
         }
@@ -122,7 +123,8 @@ impl PuzzleView {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use kenken::{Cage, Cell, Polyomino};
+    use kenken::constraints::cover::Polyomino;
+    use kenken::{Cage, Cell};
 
     #[test]
     fn split_operation_maps_each_op_kind() {
@@ -153,10 +155,14 @@ mod tests {
         let p = Puzzle::new(3).unwrap();
         let cage_a = Cage::new(
             3,
-            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]),
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1)]).unwrap(),
             Operation::Add(3),
         );
-        let cage_b = Cage::new(3, Polyomino::new(&[Cell::new(2, 2)]), Operation::Given(2));
+        let cage_b = Cage::new(
+            3,
+            Polyomino::new(&[Cell::new(2, 2)]).unwrap(),
+            Operation::Given(2),
+        );
         let p = p.insert_cage(cage_a).unwrap().insert_cage(cage_b).unwrap();
 
         let v = PuzzleView::from(&p);
@@ -186,9 +192,21 @@ mod tests {
         let p = Puzzle::new(3).unwrap();
         // Cages is backed by a HashMap so iteration order is unspecified; inserting
         // in reverse row-major order ensures the sort in PuzzleView::from is exercised.
-        let cage_c = Cage::new(3, Polyomino::new(&[Cell::new(2, 0)]), Operation::Given(3));
-        let cage_b = Cage::new(3, Polyomino::new(&[Cell::new(1, 0)]), Operation::Given(2));
-        let cage_a = Cage::new(3, Polyomino::new(&[Cell::new(0, 0)]), Operation::Given(1));
+        let cage_c = Cage::new(
+            3,
+            Polyomino::new(&[Cell::new(2, 0)]).unwrap(),
+            Operation::Given(3),
+        );
+        let cage_b = Cage::new(
+            3,
+            Polyomino::new(&[Cell::new(1, 0)]).unwrap(),
+            Operation::Given(2),
+        );
+        let cage_a = Cage::new(
+            3,
+            Polyomino::new(&[Cell::new(0, 0)]).unwrap(),
+            Operation::Given(1),
+        );
         let p = p
             .insert_cage(cage_c)
             .unwrap()
@@ -229,7 +247,7 @@ mod tests {
         let p = Puzzle::new(4).unwrap();
         let cage = Cage::new(
             4,
-            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]),
+            Polyomino::new(&[Cell::new(0, 0), Cell::new(0, 1), Cell::new(0, 2)]).unwrap(),
             Operation::Add(6),
         );
         // Insert without calling `propagate_fully`: the puzzle's grid still

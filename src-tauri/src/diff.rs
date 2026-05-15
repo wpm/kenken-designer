@@ -60,7 +60,7 @@ impl PuzzleDiff {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use kenken::{Cell, Delta, Values};
+    use kenken::{Cell, Delta, Fill};
 
     #[test]
     fn between_identical_puzzles_is_empty() {
@@ -76,8 +76,8 @@ mod tests {
         let before = Puzzle::new(4).unwrap();
         let delta = Delta::identity(4)
             .unwrap()
-            .set(Cell::new(0, 0), Values::new([1, 2]));
-        let after = before.narrow(&delta);
+            .set(Cell::new(0, 0), Fill::new([1, 2]));
+        let after = before.narrow(&delta).unwrap();
 
         let diff = PuzzleDiff::between(&before, &after);
         let cd = diff
@@ -95,8 +95,8 @@ mod tests {
         let after = Puzzle::new(4).unwrap();
         let delta = Delta::identity(4)
             .unwrap()
-            .set(Cell::new(0, 0), Values::new([1, 2]));
-        let before = after.narrow(&delta);
+            .set(Cell::new(0, 0), Fill::new([1, 2]));
+        let before = after.narrow(&delta).unwrap();
 
         let diff = PuzzleDiff::between(&before, &after);
         let cd = diff
@@ -115,13 +115,13 @@ mod tests {
 
         let delta_before = Delta::identity(4)
             .unwrap()
-            .set(Cell::new(0, 0), Values::new([1, 2]));
-        let before = base.narrow(&delta_before);
+            .set(Cell::new(0, 0), Fill::new([1, 2]));
+        let before = base.narrow(&delta_before).unwrap();
 
         let delta_after = Delta::identity(4)
             .unwrap()
-            .set(Cell::new(0, 1), Values::new([1, 2]));
-        let after = base.narrow(&delta_after);
+            .set(Cell::new(0, 1), Fill::new([1, 2]));
+        let after = base.narrow(&delta_after).unwrap();
 
         let diff = PuzzleDiff::between(&before, &after);
 
@@ -148,8 +148,8 @@ mod tests {
         let before = Puzzle::new(3).unwrap();
         let delta = Delta::identity(3)
             .unwrap()
-            .set(Cell::new(0, 0), Values::new([2]));
-        let after = before.narrow(&delta);
+            .set(Cell::new(0, 0), Fill::new([2]));
+        let after = before.narrow(&delta).unwrap();
 
         let diff = PuzzleDiff::between(&before, &after);
         let cd = diff
@@ -168,8 +168,8 @@ mod tests {
         let before = Puzzle::new(4).unwrap();
         let delta = Delta::identity(4)
             .unwrap()
-            .set(Cell::new(0, 0), Values::new([1, 2]));
-        let after = before.narrow(&delta);
+            .set(Cell::new(0, 0), Fill::new([1, 2]));
+        let after = before.narrow(&delta).unwrap();
 
         let diff = PuzzleDiff::between(&before, &after);
 
