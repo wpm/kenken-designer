@@ -183,7 +183,6 @@ fn step_target_picker(entry: OperatorEntry, key: &str) -> Step {
     if len == 0 {
         return Step::Update(entry);
     }
-    let prior_digits = digits.clone();
     match key {
         "Enter" => {
             selected_target.map_or(Step::Update(entry), |target| Step::Commit { op, target })
@@ -198,11 +197,23 @@ fn step_target_picker(entry: OperatorEntry, key: &str) -> Step {
             let next = if selected == 0 { len - 1 } else { selected - 1 };
             Step::Update(replace_target_picker(entry, op, next, String::new()))
         }
-        "Backspace" => step_buffer_change(entry, op, selected, &prior_digits, |d| {
-            d.pop();
-        }),
+        "Backspace" => {
+            let mut new_digits = digits.clone();
+            new_digits.pop();
+            // Multi-cell cages walk back to OpPicker when the buffer empties; singletons
+            // (Given-only) stay in TargetPicker with the prior selection.
+            if new_digits.is_empty() && entry.options.iter().any(|o| o.op != OpKind::Given) {
+                return Step::Update(OperatorEntry {
+                    mode: EntryMode::OpPicker,
+                    ..entry
+                });
+            }
+            let new_selected = jump_to_match(targets, &new_digits).unwrap_or(selected);
+            Step::Update(replace_target_picker(entry, op, new_selected, new_digits))
+        }
         d if is_digit(d) => {
-            let new_digits = format!("{prior_digits}{d}");
+            let mut new_digits = digits.clone();
+            new_digits.push_str(d);
             let Some(new_selected) = jump_to_match(targets, &new_digits) else {
                 return Step::Update(entry);
             };
@@ -210,30 +221,6 @@ fn step_target_picker(entry: OperatorEntry, key: &str) -> Step {
         }
         _ => Step::Update(entry),
     }
-}
-
-/// Updates the digit buffer via `mutate`, then moves the selection to the first
-/// target whose decimal representation starts with the new buffer (or keeps the
-/// old selection if nothing matches). When the buffer empties under Backspace,
-/// walks back to `OpPicker` for non-singleton cage shapes.
-fn step_buffer_change(
-    entry: OperatorEntry,
-    op: OpKind,
-    selected: usize,
-    digits: &str,
-    mutate: impl FnOnce(&mut String),
-) -> Step {
-    let mut new_digits = digits.to_string();
-    mutate(&mut new_digits);
-    if new_digits.is_empty() && entry.options.iter().any(|o| o.op != OpKind::Given) {
-        return Step::Update(OperatorEntry {
-            mode: EntryMode::OpPicker,
-            ..entry
-        });
-    }
-    let targets = targets_for_op(&entry.options, op);
-    let new_selected = jump_to_match(targets, &new_digits).unwrap_or(selected);
-    Step::Update(replace_target_picker(entry, op, new_selected, new_digits))
 }
 
 fn jump_to_match(targets: &[u32], digits: &str) -> Option<usize> {

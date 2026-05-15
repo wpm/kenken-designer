@@ -175,9 +175,7 @@ test.describe('operator entry picker', () => {
     await page.keyboard.press('Enter');
     await page.keyboard.press('+');
 
-    // Add targets are [3, 4, 5]; "9" is not a prefix of any valid target. The
-    // keystroke should be ignored: label stays at the default selection "3+|"
-    // rather than showing the invalid "9+|".
+    // Add targets are [3, 4, 5]; "9" is not a prefix of any valid target.
     await page.keyboard.press('9');
 
     await expect(page.locator('.grid-svg text', { hasText: /^3\+\|$/ }))
@@ -185,7 +183,6 @@ test.describe('operator entry picker', () => {
     await expect(page.locator('.grid-svg text', { hasText: /^9\+\|$/ }))
       .toHaveCount(0);
 
-    // Enter commits the default selection (3), not the typed-but-invalid 9.
     await page.keyboard.press('Enter');
 
     await expect.poll(() =>
