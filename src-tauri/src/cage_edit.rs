@@ -490,6 +490,13 @@ mod tests {
     }
 
     #[test]
+    fn cage_options_n_exceeds_u8_returns_empty() {
+        // u8::try_from(256) fails; the function should return empty without panicking.
+        assert!(cage_options(&[(0, 0)], 256).is_empty());
+        assert!(cage_options(&[(0, 0)], usize::MAX).is_empty());
+    }
+
+    #[test]
     fn cage_options_targets_are_ascending() {
         let options = cage_options(&[(0, 0), (0, 1), (1, 0)], 5);
         for opt in &options {
@@ -510,6 +517,19 @@ mod tests {
     fn insert_cage_rejects_empty_cells() {
         let p = Puzzle::new(4).unwrap();
         assert!(do_insert_cage(&p, &[], OpKind::Add, 3).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_disconnected_cells() {
+        // (0,0) and (2,2) are not edge-connected.
+        let p = Puzzle::new(4).unwrap();
+        let result = do_insert_cage(&p, &[(0, 0), (2, 2)], OpKind::Add, 5);
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(
+            err.contains("edge-connected"),
+            "error should mention edge-connected: {err}"
+        );
     }
 
     #[test]
@@ -932,6 +952,32 @@ mod tests {
         assert_eq!(targets, vec![(0, 1)], "expected exactly one target");
     }
 
+    /// When the cell isn't in any cage, `legal_move_targets` returns empty.
+    #[test]
+    fn legal_move_targets_empty_when_cell_not_in_cage() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(legal_move_targets(&p, (0, 0)).is_empty());
+    }
+
+    /// The bottom-right corner cell's 4-neighbors include row=n and column=n,
+    /// which the function must skip without indexing out of range.
+    #[test]
+    fn legal_move_targets_skips_out_of_bounds_neighbors() {
+        // Singleton cage at (2,2) on a 3x3 grid. Its 4-neighbors include
+        // (2,3) and (3,2) which sit past the grid edge; the function must skip
+        // them via the `neighbor.row >= n || neighbor.column >= n` guard.
+        let p = Puzzle::new(3)
+            .unwrap()
+            .insert_cage(given_cage((2, 2), 1, 3))
+            .unwrap()
+            .insert_cage(given_cage((1, 2), 2, 3))
+            .unwrap()
+            .insert_cage(given_cage((2, 1), 3, 3))
+            .unwrap();
+        let targets = legal_move_targets(&p, (2, 2));
+        assert_eq!(targets, vec![(1, 2), (2, 1)]);
+    }
+
     /// A 1-cell singleton cage adjacent to exactly one other cage → that cage is the sole target.
     #[test]
     fn legal_move_targets_includes_only_target_for_singleton_source() {
@@ -993,6 +1039,40 @@ mod tests {
         assert_eq!(tgt.cells().len(), 3);
         // Only 1 cage total
         assert_eq!(next.cages().count(), 1);
+    }
+
+    /// Moving a cell into its own source cage is rejected.
+    #[test]
+    fn move_cell_rejects_when_target_is_source_cage() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap();
+        let result = do_move_cell(&p, (0, 0), (0, 1));
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(
+            err.contains("same as source"),
+            "error should mention same source: {err}"
+        );
+    }
+
+    /// Moving a cell to a non-adjacent cage is rejected.
+    #[test]
+    fn move_cell_rejects_when_target_cage_not_adjacent() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(3, 2), (3, 3)], 7, 4))
+            .unwrap();
+        let result = do_move_cell(&p, (0, 0), (3, 2));
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(
+            err.contains("not adjacent"),
+            "error should mention adjacency: {err}"
+        );
     }
 
     /// Trying to move an inner cell of an I-pentomino should fail.
