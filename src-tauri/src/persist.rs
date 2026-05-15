@@ -127,7 +127,11 @@ mod tests {
         fn cage_at(puzzle: &Puzzle, row: usize, col: usize) -> &Cage {
             puzzle
                 .cages()
-                .find(|c| c.cells().iter().any(|cell| cell.row == row && cell.column == col))
+                .find(|c| {
+                    c.cells()
+                        .iter()
+                        .any(|cell| cell.row == row && cell.column == col)
+                })
                 .unwrap()
         }
         fn cell_set(cage: &Cage) -> std::collections::BTreeSet<(usize, usize)> {
