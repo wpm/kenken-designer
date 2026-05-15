@@ -36,7 +36,7 @@ impl std::fmt::Display for LoadError {
             Self::UnsupportedVersion(v) => write!(f, "unsupported version: {v}"),
             Self::Parse(s) => write!(f, "parse error: {s}"),
             Self::Io(s) => write!(f, "I/O error: {s}"),
-            Self::KenKen(e) => write!(f, "puzzle error: {e:?}"),
+            Self::KenKen(e) => write!(f, "puzzle error: {e}"),
         }
     }
 }
