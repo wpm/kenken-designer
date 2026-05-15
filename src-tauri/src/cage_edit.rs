@@ -239,56 +239,6 @@ pub fn do_clear_all_cages(puzzle: Puzzle) -> Puzzle {
     polys.iter().fold(puzzle, Puzzle::remove_cage)
 }
 
-/// Shared mutation logic for `do_move_cell`: removes `cell_obj` from `src_poly`, adds it to
-/// `tgt_poly`, and reinserts both (or drafts them) as appropriate.
-fn apply_cell_transfer(
-    puzzle: &Puzzle,
-    n: u8,
-    cell_obj: Cell,
-    src_poly: &Polyomino,
-    src_op: Operation,
-    tgt_poly: &Polyomino,
-    tgt_op: Operation,
-) -> Result<(Puzzle, Vec<DraftCage>), String> {
-    if !cell_obj
-        .neighbors_4()
-        .any(|nb| tgt_poly.cells().contains(&nb))
-    {
-        return Err(ERR_NOT_ADJACENT_TO_TARGET.into());
-    }
-    let new_tgt_poly = tgt_poly.insert(cell_obj).map_err(|e| format!("{e:?}"))?;
-    let intermediate = puzzle.clone().remove_cage(src_poly).remove_cage(tgt_poly);
-    let mut drafts = Vec::new();
-
-    let next = if src_poly.len() == 1 {
-        intermediate
-    } else {
-        let new_src_poly = src_poly.remove(cell_obj).map_err(|e| format!("{e:?}"))?;
-        if op_legal_for_size(src_op, new_src_poly.len()) {
-            intermediate
-                .insert_cage(Cage::new(n, new_src_poly, src_op))
-                .map_err(|e| format!("{e:?}"))?
-        } else {
-            drafts.push(DraftCage {
-                cells: cells_to_vec(&new_src_poly),
-            });
-            intermediate
-        }
-    };
-
-    if op_legal_for_size(tgt_op, new_tgt_poly.len()) {
-        let next = next
-            .insert_cage(Cage::new(n, new_tgt_poly, tgt_op))
-            .map_err(|e| format!("{e:?}"))?;
-        Ok((next, drafts))
-    } else {
-        drafts.push(DraftCage {
-            cells: cells_to_vec(&new_tgt_poly),
-        });
-        Ok((next, drafts))
-    }
-}
-
 pub fn do_move_cell(
     puzzle: &Puzzle,
     cell: (usize, usize),
@@ -327,7 +277,37 @@ pub fn do_move_cell(
         }
     }
 
-    apply_cell_transfer(puzzle, n, cell_obj, &src_poly, src_op, &tgt_poly, tgt_op)
+    let new_tgt_poly = tgt_poly.insert(cell_obj).map_err(|e| format!("{e:?}"))?;
+    let intermediate = puzzle.clone().remove_cage(&src_poly).remove_cage(&tgt_poly);
+    let mut drafts = Vec::new();
+
+    let next = if src_poly.len() == 1 {
+        intermediate
+    } else {
+        let new_src_poly = src_poly.remove(cell_obj).map_err(|e| format!("{e:?}"))?;
+        if op_legal_for_size(src_op, new_src_poly.len()) {
+            intermediate
+                .insert_cage(Cage::new(n, new_src_poly, src_op))
+                .map_err(|e| format!("{e:?}"))?
+        } else {
+            drafts.push(DraftCage {
+                cells: cells_to_vec(&new_src_poly),
+            });
+            intermediate
+        }
+    };
+
+    if op_legal_for_size(tgt_op, new_tgt_poly.len()) {
+        let next = next
+            .insert_cage(Cage::new(n, new_tgt_poly, tgt_op))
+            .map_err(|e| format!("{e:?}"))?;
+        Ok((next, drafts))
+    } else {
+        drafts.push(DraftCage {
+            cells: cells_to_vec(&new_tgt_poly),
+        });
+        Ok((next, drafts))
+    }
 }
 
 #[cfg(test)]
@@ -804,6 +784,39 @@ mod tests {
             .unwrap();
         let err = expect_err(do_move_cell(&p, (0, 0), (3, 2)));
         assert_eq!(err, ERR_NOT_ADJACENT_TO_TARGET);
+    }
+
+    /// Moving a cell out of a Sub cage shrinks it to size 1, which Sub doesn't allow,
+    /// so the leftover cell is returned as a draft instead of a real cage.
+    #[test]
+    fn move_cell_returns_draft_when_src_op_invalid_for_new_size() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(sub_cage(&[(0, 0), (0, 1)], 1, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(1, 0), (1, 1)], 5, 4))
+            .unwrap();
+        let (next, drafts) = do_move_cell(&p, (0, 0), (1, 0)).unwrap();
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].cells, vec![(0, 1)]);
+        assert_eq!(next.cages().count(), 1);
+    }
+
+    /// Moving a cell into a Sub cage grows it to size 3, which Sub doesn't allow,
+    /// so the would-be target is returned as a draft instead of a real cage.
+    #[test]
+    fn move_cell_returns_draft_when_tgt_op_invalid_for_new_size() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(sub_cage(&[(1, 0), (1, 1)], 1, 4))
+            .unwrap();
+        let (next, drafts) = do_move_cell(&p, (0, 0), (1, 0)).unwrap();
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(next.cages().count(), 1);
+        let src = next.cage_at(Cell::new(0, 1)).unwrap();
+        assert_eq!(src.cells().len(), 1);
     }
 
     /// Trying to move an inner cell of an I-pentomino should fail.
