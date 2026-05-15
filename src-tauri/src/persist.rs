@@ -221,4 +221,25 @@ mod tests {
             "File should contain newlines (pretty-printed)"
         );
     }
+
+    #[test]
+    fn load_from_path_returns_io_error_for_missing_file() {
+        let path = crate::test_util::TmpPath::new("load_missing");
+        let err = load_from_path(path.as_str()).unwrap_err();
+        assert!(
+            matches!(err, LoadError::Io(_)),
+            "Expected Io error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn save_returns_io_error_when_parent_dir_missing() {
+        let puzzle = Puzzle::new(3).unwrap();
+        let path = crate::test_util::TmpPath::unwritable("save");
+        let err = save(&puzzle, path.as_str()).unwrap_err();
+        assert!(
+            matches!(err, LoadError::Io(_)),
+            "Expected Io error, got {err:?}"
+        );
+    }
 }
