@@ -91,6 +91,21 @@ mod tests {
     use super::*;
     use kenken::{Cage, Cell, Cover, Operation, Polyomino};
 
+    fn cage_at(puzzle: &Puzzle, row: usize, col: usize) -> &Cage {
+        puzzle
+            .cages()
+            .find(|c| {
+                c.cells()
+                    .iter()
+                    .any(|cell| cell.row == row && cell.column == col)
+            })
+            .unwrap()
+    }
+
+    fn cell_set(cage: &Cage) -> std::collections::BTreeSet<(usize, usize)> {
+        cage.cells().iter().map(|c| (c.row, c.column)).collect()
+    }
+
     fn make_5x5_puzzle() -> Puzzle {
         let p = Puzzle::new(5).unwrap();
         let cage_a = Cage::new(
@@ -124,19 +139,6 @@ mod tests {
         // Verify cage contents survive the round-trip: look up the two-cell
         // Add cage (anchor at (0,0)) in the loaded puzzle and confirm its
         // operation and cells match the original.
-        fn cage_at(puzzle: &Puzzle, row: usize, col: usize) -> &Cage {
-            puzzle
-                .cages()
-                .find(|c| {
-                    c.cells()
-                        .iter()
-                        .any(|cell| cell.row == row && cell.column == col)
-                })
-                .unwrap()
-        }
-        fn cell_set(cage: &Cage) -> std::collections::BTreeSet<(usize, usize)> {
-            cage.cells().iter().map(|c| (c.row, c.column)).collect()
-        }
         let original_add_cage = cage_at(&puzzle, 0, 0);
         let loaded_add_cage = cage_at(&loaded, 0, 0);
         assert_eq!(
