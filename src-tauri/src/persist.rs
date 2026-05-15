@@ -124,39 +124,25 @@ mod tests {
         // Verify cage contents survive the round-trip: look up the two-cell
         // Add cage (anchor at (0,0)) in the loaded puzzle and confirm its
         // operation and cells match the original.
-        let original_add_cage = puzzle
-            .cages()
-            .find(|c| {
-                c.cells()
-                    .iter()
-                    .any(|cell| cell.row == 0 && cell.column == 0)
-            })
-            .unwrap();
-        let loaded_add_cage = loaded
-            .cages()
-            .find(|c| {
-                c.cells()
-                    .iter()
-                    .any(|cell| cell.row == 0 && cell.column == 0)
-            })
-            .unwrap();
+        fn cage_at(puzzle: &Puzzle, row: usize, col: usize) -> &Cage {
+            puzzle
+                .cages()
+                .find(|c| c.cells().iter().any(|cell| cell.row == row && cell.column == col))
+                .unwrap()
+        }
+        fn cell_set(cage: &Cage) -> std::collections::BTreeSet<(usize, usize)> {
+            cage.cells().iter().map(|c| (c.row, c.column)).collect()
+        }
+        let original_add_cage = cage_at(&puzzle, 0, 0);
+        let loaded_add_cage = cage_at(&loaded, 0, 0);
         assert_eq!(
             original_add_cage.operation(),
             loaded_add_cage.operation(),
             "Add cage operation should survive round-trip"
         );
-        let original_cells: std::collections::BTreeSet<(usize, usize)> = original_add_cage
-            .cells()
-            .iter()
-            .map(|c| (c.row, c.column))
-            .collect();
-        let loaded_cells: std::collections::BTreeSet<(usize, usize)> = loaded_add_cage
-            .cells()
-            .iter()
-            .map(|c| (c.row, c.column))
-            .collect();
         assert_eq!(
-            original_cells, loaded_cells,
+            cell_set(original_add_cage),
+            cell_set(loaded_add_cage),
             "Add cage cells should survive round-trip"
         );
     }
