@@ -1,7 +1,6 @@
 mod cage_edit;
 pub mod diff;
 mod edit;
-#[allow(dead_code)]
 mod persist;
 mod session;
 mod view;
@@ -21,14 +20,13 @@ use view::{CageOption, DraftCage, EditResult, OpKind, PuzzleView, RankedTupleVie
 
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
+const FILE_ACTION_EVENT: &str = "file-action";
 
 const ERR_VALUE_OUT_OF_RANGE: &str = "value out of range";
 
 fn commit_new_puzzle(state: &Mutex<Session>, n: usize) -> Result<PuzzleView, String> {
     let puzzle = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
-    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
-    session.load(puzzle);
-    Ok(PuzzleView::from(session.current()))
+    load_into_session(state, puzzle)
 }
 
 fn current_state(state: &Mutex<Session>) -> Result<PuzzleView, String> {
@@ -46,6 +44,30 @@ fn new_puzzle(n: usize, state: State<Mutex<Session>>) -> Result<PuzzleView, Stri
 #[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn get_state(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
     current_state(&state)
+}
+
+fn load_into_session(state: &Mutex<Session>, puzzle: Puzzle) -> Result<PuzzleView, String> {
+    let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
+    session.load(puzzle);
+    Ok(PuzzleView::from(session.current()))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn save_puzzle(path: String, state: State<Mutex<Session>>) -> Result<(), String> {
+    let puzzle = state
+        .lock()
+        .map_err(|e| format!("{e:?}"))?
+        .current()
+        .clone();
+    persist::save(&puzzle, &path).map_err(|e| format!("{e}"))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
+fn load_puzzle(path: String, state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
+    let puzzle = persist::load_from_path(&path).map_err(|e| format!("{e}"))?;
+    load_into_session(&state, puzzle)
 }
 
 fn apply_undo(state: &Mutex<Session>) -> Result<PuzzleView, String> {
@@ -379,6 +401,10 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let open = MenuItemBuilder::with_id("open", "Open…").build(app)?;
+    let save = MenuItemBuilder::with_id("save", "Save").build(app)?;
+    let save_as = MenuItemBuilder::with_id("save_as", "Save As…").build(app)?;
+
     #[cfg(any(
         target_os = "linux",
         target_os = "dragonfly",
@@ -396,12 +422,15 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )))]
     let file_menu = {
         let close = PredefinedMenuItem::close_window(app, None)?;
+        let sep1 = PredefinedMenuItem::separator(app)?;
+        let sep2 = PredefinedMenuItem::separator(app)?;
         #[cfg(not(target_os = "macos"))]
         let quit = PredefinedMenuItem::quit(app, None)?;
         #[cfg(target_os = "macos")]
-        let items: Vec<&dyn IsMenuItem<R>> = vec![&close];
+        let items: Vec<&dyn IsMenuItem<R>> = vec![&open, &sep1, &save, &save_as, &sep2, &close];
         #[cfg(not(target_os = "macos"))]
-        let items: Vec<&dyn IsMenuItem<R>> = vec![&close, &quit];
+        let items: Vec<&dyn IsMenuItem<R>> =
+            vec![&open, &sep1, &save, &save_as, &sep2, &close, &quit];
         Some(Submenu::with_items(app, "File", true, &items)?)
     };
 
@@ -454,15 +483,21 @@ fn dispatch_menu_action(state: &Mutex<Session>, id: &str) -> Option<PuzzleView> 
 #[allow(clippy::needless_pass_by_value)] // on_menu_event requires by-value MenuEvent
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let id = event.id().as_ref();
-    if id == "clear_all_cages" {
-        let _ = app.emit(CLEAR_ALL_CAGES_EVENT, ());
-        return;
-    }
-    let Some(state) = app.try_state::<Mutex<Session>>() else {
-        return;
-    };
-    if let Some(view) = dispatch_menu_action(&state, id) {
-        let _ = app.emit(PUZZLE_UPDATED_EVENT, view);
+    match id {
+        "clear_all_cages" => {
+            let _ = app.emit(CLEAR_ALL_CAGES_EVENT, ());
+        }
+        "open" | "save" | "save_as" => {
+            let _ = app.emit(FILE_ACTION_EVENT, id);
+        }
+        _ => {
+            let Some(state) = app.try_state::<Mutex<Session>>() else {
+                return;
+            };
+            if let Some(view) = dispatch_menu_action(&state, id) {
+                let _ = app.emit(PUZZLE_UPDATED_EVENT, view);
+            }
+        }
     }
 }
 
@@ -481,6 +516,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             new_puzzle,
             get_state,
+            save_puzzle,
+            load_puzzle,
             undo,
             redo,
             insert_cage,
