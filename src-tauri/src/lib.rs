@@ -506,6 +506,13 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    fn poison_lock<T>(m: &Mutex<T>) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = m.lock().unwrap();
+            panic!("intentional");
+        }));
+    }
+
     #[test]
     fn apply_menu_action_undo_pops_undo_stack() {
         let mut s = Session::new(Puzzle::new(3).unwrap());
@@ -654,10 +661,7 @@ mod tests {
     #[test]
     fn current_state_returns_err_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(state.is_poisoned());
         assert!(current_state(&state).is_err());
     }
@@ -681,10 +685,7 @@ mod tests {
     #[test]
     fn dispatch_menu_action_returns_none_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(dispatch_menu_action(&state, "undo").is_none());
     }
 
@@ -709,10 +710,7 @@ mod tests {
     #[test]
     fn apply_undo_returns_err_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(state.is_poisoned());
         assert!(apply_undo(&state).is_err());
     }
@@ -739,10 +737,7 @@ mod tests {
     #[test]
     fn apply_redo_returns_err_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(state.is_poisoned());
         assert!(apply_redo(&state).is_err());
     }
@@ -1431,11 +1426,7 @@ mod tests {
     #[test]
     fn legal_move_targets_command_returns_err_when_lock_poisoned() {
         let app = empty_session_app(3);
-        let state = app.state::<Mutex<Session>>();
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&app.state::<Mutex<Session>>());
         assert!(legal_move_targets((0, 0), app.state::<Mutex<Session>>()).is_err());
     }
 
@@ -1462,22 +1453,19 @@ mod tests {
     #[test]
     fn cage_options_command_returns_err_when_lock_poisoned() {
         let app = empty_session_app(3);
-        let state = app.state::<Mutex<Session>>();
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&app.state::<Mutex<Session>>());
         assert!(cage_options(vec![(0, 0)], app.state::<Mutex<Session>>()).is_err());
     }
 
     #[test]
     fn handle_menu_event_emits_clear_all_cages_without_dispatching() {
-        // The clear_all_cages id branch returns before touching session state.
-        // The Session should be untouched after the event fires.
-        let app = tauri::test::mock_app();
-        let mut session = Session::new(Puzzle::new(3).unwrap());
-        session.commit(Puzzle::new(4).unwrap());
-        app.manage(Mutex::new(session));
+        // The clear_all_cages id branch returns before touching session state,
+        // so the session committed below must remain at n=4 after the event.
+        let app = empty_session_app(3);
+        app.state::<Mutex<Session>>()
+            .lock()
+            .unwrap()
+            .commit(Puzzle::new(4).unwrap());
 
         handle_menu_event(
             app.handle(),
@@ -1486,7 +1474,6 @@ mod tests {
             },
         );
 
-        // Session should remain at n=4 (no undo/redo applied).
         assert_eq!(current_n(&app), 4);
     }
 }

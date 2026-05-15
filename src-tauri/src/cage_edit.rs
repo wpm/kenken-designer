@@ -521,7 +521,6 @@ mod tests {
 
     #[test]
     fn insert_cage_rejects_disconnected_cells() {
-        // (0,0) and (2,2) are not edge-connected.
         let p = Puzzle::new(4).unwrap();
         let result = do_insert_cage(&p, &[(0, 0), (2, 2)], OpKind::Add, 5);
         assert!(result.is_err());
@@ -952,7 +951,6 @@ mod tests {
         assert_eq!(targets, vec![(0, 1)], "expected exactly one target");
     }
 
-    /// When the cell isn't in any cage, `legal_move_targets` returns empty.
     #[test]
     fn legal_move_targets_empty_when_cell_not_in_cage() {
         let p = Puzzle::new(4).unwrap();
@@ -1041,7 +1039,6 @@ mod tests {
         assert_eq!(next.cages().count(), 1);
     }
 
-    /// Moving a cell into its own source cage is rejected.
     #[test]
     fn move_cell_rejects_when_target_is_source_cage() {
         let p = Puzzle::new(4)
@@ -1057,7 +1054,6 @@ mod tests {
         );
     }
 
-    /// Moving a cell to a non-adjacent cage is rejected.
     #[test]
     fn move_cell_rejects_when_target_cage_not_adjacent() {
         let p = Puzzle::new(4)
