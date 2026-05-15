@@ -1,6 +1,7 @@
 mod cage_edit;
 pub mod diff;
 mod edit;
+mod persist;
 mod session;
 mod view;
 

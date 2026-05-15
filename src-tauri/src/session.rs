@@ -1,5 +1,6 @@
 use kenken::Puzzle;
 
+#[derive(Debug)]
 pub struct Session {
     current: Puzzle,
     undo: Vec<Puzzle>,
