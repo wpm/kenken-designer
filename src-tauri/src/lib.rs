@@ -217,19 +217,6 @@ fn clear_all_cages(state: State<Mutex<Session>>) -> Result<PuzzleView, String> {
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
-fn flip_cell(
-    cell: (usize, usize),
-    target_anchor: (usize, usize),
-    state: State<Mutex<Session>>,
-) -> Result<EditResult, String> {
-    do_command(&state, |session| {
-        let (next, drafts) = cage_edit::do_flip_cell(session.current(), cell, target_anchor)?;
-        Ok(commit_edit(session, next, drafts))
-    })
-}
-
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
 fn move_cell(
     cell: (usize, usize),
     target_anchor: (usize, usize),
@@ -239,16 +226,6 @@ fn move_cell(
         let (next, drafts) = cage_edit::do_move_cell(session.current(), cell, target_anchor)?;
         Ok(commit_edit(session, next, drafts))
     })
-}
-
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri requires State to be passed by value
-fn legal_move_targets(
-    cell: (usize, usize),
-    state: State<Mutex<Session>>,
-) -> Result<Vec<(usize, usize)>, String> {
-    let session = state.lock().map_err(|e| format!("{e:?}"))?;
-    Ok(cage_edit::legal_move_targets(session.current(), cell))
 }
 
 #[tauri::command]
@@ -525,9 +502,7 @@ pub fn run() {
             shrink_cage,
             merge_cages,
             set_cage_operation,
-            flip_cell,
             move_cell,
-            legal_move_targets,
             cage_options,
             clear_all_cages,
             rank_active_cage,
@@ -995,29 +970,6 @@ mod tests {
     }
 
     #[test]
-    fn flip_cell_command_happy_path() {
-        let app = empty_session_app(4);
-        insert_cage(
-            vec![(0, 0), (0, 1)],
-            OpKind::Add,
-            3,
-            app.state::<Mutex<Session>>(),
-        )
-        .unwrap();
-        insert_cage(
-            vec![(1, 0), (1, 1)],
-            OpKind::Add,
-            5,
-            app.state::<Mutex<Session>>(),
-        )
-        .unwrap();
-
-        let result = flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).unwrap();
-        assert!(result.drafts.is_empty());
-        assert_eq!(result.view.cages.len(), 2);
-    }
-
-    #[test]
     fn clear_all_cages_returns_empty_puzzle() {
         let app = empty_session_app(4);
         insert_cage(
@@ -1183,19 +1135,6 @@ mod tests {
         )
         .unwrap();
         assert!(move_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).is_err());
-    }
-
-    #[test]
-    fn flip_cell_command_returns_err_when_cell_not_caged() {
-        let app = empty_session_app(4);
-        insert_cage(
-            vec![(1, 0), (1, 1)],
-            OpKind::Add,
-            5,
-            app.state::<Mutex<Session>>(),
-        )
-        .unwrap();
-        assert!(flip_cell((0, 0), (1, 0), app.state::<Mutex<Session>>()).is_err());
     }
 
     #[test]
@@ -1431,42 +1370,6 @@ mod tests {
             err.starts_with(ERR_VALUE_OUT_OF_RANGE),
             "expected error to start with {ERR_VALUE_OUT_OF_RANGE:?}, got {err:?}"
         );
-    }
-
-    #[test]
-    fn legal_move_targets_command_returns_neighbor_anchors() {
-        let app = empty_session_app(4);
-        insert_cage(
-            vec![(0, 0), (0, 1)],
-            OpKind::Add,
-            3,
-            app.state::<Mutex<Session>>(),
-        )
-        .unwrap();
-        insert_cage(
-            vec![(1, 0), (1, 1)],
-            OpKind::Add,
-            5,
-            app.state::<Mutex<Session>>(),
-        )
-        .unwrap();
-
-        let targets = legal_move_targets((0, 0), app.state::<Mutex<Session>>()).unwrap();
-        assert_eq!(targets, vec![(1, 0)]);
-    }
-
-    #[test]
-    fn legal_move_targets_command_returns_empty_for_uncaged_cell() {
-        let app = empty_session_app(4);
-        let targets = legal_move_targets((0, 0), app.state::<Mutex<Session>>()).unwrap();
-        assert!(targets.is_empty());
-    }
-
-    #[test]
-    fn legal_move_targets_command_returns_err_when_lock_poisoned() {
-        let app = empty_session_app(3);
-        poison_lock(&app.state::<Mutex<Session>>());
-        assert!(legal_move_targets((0, 0), app.state::<Mutex<Session>>()).is_err());
     }
 
     #[test]
