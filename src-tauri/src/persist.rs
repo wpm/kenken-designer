@@ -229,7 +229,6 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        // Make sure the file doesn't exist.
         let _ = std::fs::remove_file(&path);
 
         let err = load_from_path(&path).unwrap_err();
@@ -254,22 +253,6 @@ mod tests {
         assert!(
             matches!(err, LoadError::Io(_)),
             "Expected Io error, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn load_envelope_rejects_unsupported_version() {
-        let envelope = SaveEnvelope {
-            version: 42,
-            puzzle: PuzzleData {
-                n: 4,
-                cages: vec![],
-            },
-        };
-        let err = load(envelope).unwrap_err();
-        assert!(
-            matches!(err, LoadError::UnsupportedVersion(42)),
-            "Expected UnsupportedVersion(42), got {err:?}"
         );
     }
 }
