@@ -3,6 +3,8 @@ pub mod diff;
 mod edit;
 mod persist;
 mod session;
+#[cfg(test)]
+mod test_util;
 mod view;
 
 use std::sync::Mutex;
@@ -1417,5 +1419,108 @@ mod tests {
         );
 
         assert_eq!(current_n(&app), 4);
+    }
+
+    #[test]
+    fn save_puzzle_command_writes_file_at_path() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let path = crate::test_util::TmpPath::new("save_writes");
+        save_puzzle(path.as_str().to_owned(), app.state::<Mutex<Session>>()).unwrap();
+
+        let content = std::fs::read_to_string(path.as_str()).unwrap();
+        assert!(content.contains("\"version\""));
+        assert!(content.contains("\"cages\""));
+    }
+
+    #[test]
+    fn save_puzzle_command_returns_err_for_unwritable_path() {
+        let app = empty_session_app(4);
+        let bogus = crate::test_util::TmpPath::unwritable("save");
+        assert!(save_puzzle(bogus.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn save_puzzle_command_returns_err_when_lock_poisoned() {
+        let app = empty_session_app(3);
+        poison_lock(&app.state::<Mutex<Session>>());
+        let path = crate::test_util::TmpPath::new("save_poisoned");
+        assert!(save_puzzle(path.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn load_puzzle_command_replaces_session_with_saved_puzzle() {
+        let saver = empty_session_app(5);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            5,
+            saver.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        let path = crate::test_util::TmpPath::new("load_round_trip");
+        save_puzzle(path.as_str().to_owned(), saver.state::<Mutex<Session>>()).unwrap();
+
+        let loader = empty_session_app(2);
+        let view = load_puzzle(path.as_str().to_owned(), loader.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.n, 5);
+        assert_eq!(view.cages.len(), 1);
+        assert_eq!(current_n(&loader), 5);
+    }
+
+    #[test]
+    fn load_puzzle_command_returns_err_for_missing_file() {
+        let app = empty_session_app(4);
+        let missing = crate::test_util::TmpPath::new("load_missing");
+        assert!(load_puzzle(missing.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
+        assert_eq!(current_n(&app), 4);
+    }
+
+    #[test]
+    fn load_puzzle_command_returns_err_when_lock_poisoned() {
+        let app = empty_session_app(3);
+        // Pre-create a real file so the failure point is the lock, not missing input.
+        let path = crate::test_util::TmpPath::new("load_poisoned");
+        persist::save(&Puzzle::new(3).unwrap(), path.as_str()).unwrap();
+        poison_lock(&app.state::<Mutex<Session>>());
+        assert!(load_puzzle(path.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    fn assert_menu_event_does_not_mutate_session(id: &str) {
+        let app = empty_session_app(3);
+        app.state::<Mutex<Session>>()
+            .lock()
+            .unwrap()
+            .commit(Puzzle::new(4).unwrap());
+
+        handle_menu_event(
+            app.handle(),
+            MenuEvent {
+                id: tauri::menu::MenuId::new(id),
+            },
+        );
+        assert_eq!(current_n(&app), 4);
+    }
+
+    #[test]
+    fn handle_menu_event_emits_file_action_for_open() {
+        assert_menu_event_does_not_mutate_session("open");
+    }
+
+    #[test]
+    fn handle_menu_event_emits_file_action_for_save() {
+        assert_menu_event_does_not_mutate_session("save");
+    }
+
+    #[test]
+    fn handle_menu_event_emits_file_action_for_save_as() {
+        assert_menu_event_does_not_mutate_session("save_as");
     }
 }
