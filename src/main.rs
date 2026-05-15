@@ -12,6 +12,7 @@ mod grid;
 mod navigation;
 mod operator_entry;
 mod theme;
+mod toast;
 
 use app::App;
 use leptos::prelude::*;

@@ -26,8 +26,8 @@ const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
+    async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"])]
     fn listen(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> JsValue;
@@ -146,18 +146,27 @@ pub struct EditResult {
     pub drafts: Vec<DraftCage>,
 }
 
+/// Generic Tauri invoke wrapper. Reads `Toasts` from context to report errors.
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
-async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
+async fn invoke_cmd<A: Serialize, R: serde::de::DeserializeOwned>(cmd: &str, args: A) -> Option<R> {
     let args = serde_wasm_bindgen::to_value(&args).ok()?;
-    let value = invoke(cmd, args).await;
-    serde_wasm_bindgen::from_value(value).ok()
+    match invoke(cmd, args).await {
+        Ok(value) => serde_wasm_bindgen::from_value(value).ok(),
+        Err(ref e) => {
+            crate::toast::push_js_error(e);
+            None
+        }
+    }
 }
 
-#[allow(clippy::future_not_send)]
+#[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
+async fn call<A: Serialize>(cmd: &str, args: A) -> Option<PuzzleView> {
+    invoke_cmd(cmd, args).await
+}
+
+#[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
 pub async fn call_edit<A: Serialize>(cmd: &str, args: A) -> Option<EditResult> {
-    let args = serde_wasm_bindgen::to_value(&args).ok()?;
-    let value = invoke(cmd, args).await;
-    serde_wasm_bindgen::from_value(value).ok()
+    invoke_cmd(cmd, args).await
 }
 
 fn listen_for_puzzle_updates(
@@ -310,6 +319,8 @@ pub fn App() -> impl IntoView {
     let current_path = RwSignal::new(None::<String>);
     let move_mode = RwSignal::new(None::<MoveState>);
     let show_clear_modal = RwSignal::new(false);
+    let toasts: crate::toast::Toasts = RwSignal::new(Vec::new());
+    provide_context(toasts);
 
     refresh_from(
         set_puzzle,
@@ -517,6 +528,7 @@ pub fn App() -> impl IntoView {
                     }
                 }}
             </div>
+            <crate::toast::ToastStack toasts=toasts />
         </main>
     }
 }
@@ -795,12 +807,16 @@ fn handle_save(current_path: RwSignal<Option<String>>, force_prompt: bool) {
             }
         };
         let Some(path) = path else { return };
-        let args = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok();
-        if let Some(args) = args {
-            let result = invoke("save_puzzle", args).await;
-            if serde_wasm_bindgen::from_value::<()>(result).is_ok() {
-                current_path.set(Some(path));
+        let Some(args) = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok() else {
+            return;
+        };
+        match invoke("save_puzzle", args).await {
+            Ok(result) => {
+                if serde_wasm_bindgen::from_value::<()>(result).is_ok() {
+                    current_path.set(Some(path));
+                }
             }
+            Err(ref e) => crate::toast::push_js_error(e),
         }
     });
 }
@@ -815,13 +831,17 @@ fn handle_open(
     spawn_local(async move {
         let path = prompt_open_path().await;
         let Some(path) = path else { return };
-        let args = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok();
-        if let Some(args) = args {
-            let value = invoke("load_puzzle", args).await;
-            if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(value) {
-                set_view(set_puzzle, set_flash_diff, view);
-                current_path.set(Some(path));
+        let Some(args) = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok() else {
+            return;
+        };
+        match invoke("load_puzzle", args).await {
+            Ok(value) => {
+                if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(value) {
+                    set_view(set_puzzle, set_flash_diff, view);
+                    current_path.set(Some(path));
+                }
             }
+            Err(ref e) => crate::toast::push_js_error(e),
         }
     });
 }
@@ -999,11 +1019,9 @@ struct CellsArgs {
 
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
 async fn fetch_cage_options(cells: Vec<(usize, usize)>) -> Vec<CageOption> {
-    let Ok(args) = serde_wasm_bindgen::to_value(&CellsArgs { cells }) else {
-        return Vec::new();
-    };
-    let value = invoke("cage_options", args).await;
-    serde_wasm_bindgen::from_value(value).unwrap_or_default()
+    invoke_cmd::<_, Vec<CageOption>>("cage_options", CellsArgs { cells })
+        .await
+        .unwrap_or_default()
 }
 
 /// Builds the initial `OperatorEntry` from a fetched options list and an optional

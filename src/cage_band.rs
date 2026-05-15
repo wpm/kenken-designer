@@ -12,8 +12,8 @@ use wasm_bindgen::JsCast;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
+    async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
 }
 
 // ─── Data types returned by the backend ─────────────────────────────────────
@@ -42,15 +42,25 @@ struct ApplyNarrowingArgs {
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
 async fn call_rank_active_cage(anchor: (usize, usize)) -> Option<Vec<RankedTuple>> {
     let args = serde_wasm_bindgen::to_value(&RankArgs { anchor }).ok()?;
-    let result = invoke("rank_active_cage", args).await;
-    serde_wasm_bindgen::from_value(result).ok()
+    match invoke("rank_active_cage", args).await {
+        Ok(result) => serde_wasm_bindgen::from_value(result).ok(),
+        Err(ref e) => {
+            crate::toast::push_js_error(e);
+            None
+        }
+    }
 }
 
 #[allow(clippy::future_not_send)] // WASM single-threaded runtime; Send is meaningless here
 async fn call_apply_narrowing(anchor: (usize, usize), tuple: Vec<u32>) -> Option<PuzzleView> {
     let args = serde_wasm_bindgen::to_value(&ApplyNarrowingArgs { anchor, tuple }).ok()?;
-    let result = invoke("apply_narrowing", args).await;
-    serde_wasm_bindgen::from_value(result).ok()
+    match invoke("apply_narrowing", args).await {
+        Ok(result) => serde_wasm_bindgen::from_value(result).ok(),
+        Err(ref e) => {
+            crate::toast::push_js_error(e);
+            None
+        }
+    }
 }
 
 // ─── Layout constants ────────────────────────────────────────────────────────
