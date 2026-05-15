@@ -20,6 +20,8 @@ use view::{CageOption, DraftCage, EditResult, OpKind, PuzzleView, RankedTupleVie
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
 
+const ERR_VALUE_OUT_OF_RANGE: &str = "value out of range";
+
 fn commit_new_puzzle(state: &Mutex<Session>, n: usize) -> Result<PuzzleView, String> {
     let puzzle = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
@@ -283,7 +285,7 @@ fn apply_narrowing(
     }
     let mut delta = Delta::identity(puzzle.n()).map_err(|e| format!("{e:?}"))?;
     for (cell, v) in cells.iter().zip(tuple.iter()) {
-        let val = u8::try_from(*v).map_err(|e| format!("value out of range: {e}"))?;
+        let val = u8::try_from(*v).map_err(|e| format!("{ERR_VALUE_OUT_OF_RANGE}: {e}"))?;
         delta = delta.set(*cell, Fill::new([val]));
     }
     Ok(PuzzleView::from(
@@ -506,6 +508,13 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    fn poison_lock<T>(m: &Mutex<T>) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = m.lock().unwrap();
+            panic!("intentional");
+        }));
+    }
+
     #[test]
     fn apply_menu_action_undo_pops_undo_stack() {
         let mut s = Session::new(Puzzle::new(3).unwrap());
@@ -540,6 +549,19 @@ mod tests {
     // Linux and Windows. The macOS branch of build_app_menu is still compile-checked there
     // and exercised at runtime when the app launches.
     #[cfg(not(target_os = "macos"))]
+    fn find_submenu_by_text<'a>(
+        items: &'a [tauri::menu::MenuItemKind<tauri::test::MockRuntime>],
+        text: &str,
+    ) -> Option<&'a tauri::menu::Submenu<tauri::test::MockRuntime>> {
+        items.iter().find_map(|i| match i {
+            tauri::menu::MenuItemKind::Submenu(s) if s.text().ok().as_deref() == Some(text) => {
+                Some(s)
+            }
+            _ => None,
+        })
+    }
+
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn build_app_menu_includes_edit_submenu_with_custom_undo() {
         let app = tauri::test::mock_app();
@@ -547,17 +569,28 @@ mod tests {
         let items = menu.items().unwrap();
         assert!(!items.is_empty());
 
-        let edit = items.iter().find_map(|i| match i {
-            tauri::menu::MenuItemKind::Submenu(s) if s.text().ok().as_deref() == Some("Edit") => {
-                Some(s.clone())
-            }
-            _ => None,
-        });
-        let edit_items = edit.unwrap().items().unwrap();
+        let edit = find_submenu_by_text(&items, "Edit").unwrap();
+        let edit_items = edit.items().unwrap();
         let has_custom_undo = edit_items.iter().any(
             |i| matches!(i, tauri::menu::MenuItemKind::MenuItem(m) if m.id().as_ref() == "undo"),
         );
         assert!(has_custom_undo, "Edit submenu should contain custom Undo");
+    }
+
+    // Window submenu is not the first item, so the helper's `find_map` closure
+    // visits the Edit submenu first and falls through the `_ => None` arm
+    // before matching Window. This exercises the non-matching branch.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn build_app_menu_includes_window_submenu() {
+        let app = tauri::test::mock_app();
+        let menu = build_app_menu(app.handle()).unwrap();
+        let items = menu.items().unwrap();
+
+        assert!(
+            find_submenu_by_text(&items, "Window").is_some(),
+            "menu should contain a Window submenu"
+        );
     }
 
     fn current_n(app: &tauri::App<tauri::test::MockRuntime>) -> usize {
@@ -630,10 +663,7 @@ mod tests {
     #[test]
     fn current_state_returns_err_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(state.is_poisoned());
         assert!(current_state(&state).is_err());
     }
@@ -657,10 +687,7 @@ mod tests {
     #[test]
     fn dispatch_menu_action_returns_none_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(dispatch_menu_action(&state, "undo").is_none());
     }
 
@@ -685,10 +712,7 @@ mod tests {
     #[test]
     fn apply_undo_returns_err_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(state.is_poisoned());
         assert!(apply_undo(&state).is_err());
     }
@@ -715,10 +739,7 @@ mod tests {
     #[test]
     fn apply_redo_returns_err_when_lock_poisoned() {
         let state = Mutex::new(Session::new(Puzzle::new(3).unwrap()));
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = state.lock().unwrap();
-            panic!("intentional");
-        }));
+        poison_lock(&state);
         assert!(state.is_poisoned());
         assert!(apply_redo(&state).is_err());
     }
@@ -1355,5 +1376,105 @@ mod tests {
         )
         .unwrap();
         assert!(apply_narrowing((0, 0), vec![1], app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn apply_narrowing_returns_err_when_value_exceeds_u8() {
+        let app = empty_session_app(3);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        let err = apply_narrowing((0, 0), vec![300, 1], app.state::<Mutex<Session>>()).unwrap_err();
+        assert!(
+            err.starts_with(ERR_VALUE_OUT_OF_RANGE),
+            "expected error to start with {ERR_VALUE_OUT_OF_RANGE:?}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn legal_move_targets_command_returns_neighbor_anchors() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        insert_cage(
+            vec![(1, 0), (1, 1)],
+            OpKind::Add,
+            5,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let targets = legal_move_targets((0, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(targets, vec![(1, 0)]);
+    }
+
+    #[test]
+    fn legal_move_targets_command_returns_empty_for_uncaged_cell() {
+        let app = empty_session_app(4);
+        let targets = legal_move_targets((0, 0), app.state::<Mutex<Session>>()).unwrap();
+        assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn legal_move_targets_command_returns_err_when_lock_poisoned() {
+        let app = empty_session_app(3);
+        poison_lock(&app.state::<Mutex<Session>>());
+        assert!(legal_move_targets((0, 0), app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn cage_options_command_returns_valid_operators_for_singleton() {
+        let app = empty_session_app(4);
+        let options = cage_options(vec![(0, 0)], app.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].op, OpKind::Given);
+        assert_eq!(options[0].targets, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn cage_options_command_returns_binary_operators_for_two_cells() {
+        let app = empty_session_app(4);
+        let options = cage_options(vec![(0, 0), (0, 1)], app.state::<Mutex<Session>>()).unwrap();
+        let ops: Vec<OpKind> = options.iter().map(|o| o.op).collect();
+        assert_eq!(
+            ops,
+            vec![OpKind::Add, OpKind::Sub, OpKind::Mul, OpKind::Div]
+        );
+    }
+
+    #[test]
+    fn cage_options_command_returns_err_when_lock_poisoned() {
+        let app = empty_session_app(3);
+        poison_lock(&app.state::<Mutex<Session>>());
+        assert!(cage_options(vec![(0, 0)], app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn handle_menu_event_emits_clear_all_cages_without_dispatching() {
+        // The clear_all_cages id branch returns before touching session state,
+        // so the session committed below must remain at n=4 after the event.
+        let app = empty_session_app(3);
+        app.state::<Mutex<Session>>()
+            .lock()
+            .unwrap()
+            .commit(Puzzle::new(4).unwrap());
+
+        handle_menu_event(
+            app.handle(),
+            MenuEvent {
+                id: tauri::menu::MenuId::new("clear_all_cages"),
+            },
+        );
+
+        assert_eq!(current_n(&app), 4);
     }
 }

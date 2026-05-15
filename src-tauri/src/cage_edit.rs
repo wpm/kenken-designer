@@ -3,6 +3,14 @@ use kenken::{Cage, Cell, Operation, Operator, Puzzle};
 
 use crate::view::{CageOption, DraftCage, OpKind};
 
+pub const ERR_EMPTY_CAGE: &str = "cage must have at least one cell";
+pub const ERR_NOT_EDGE_CONNECTED: &str = "cage cells must be edge-connected";
+pub const ERR_CAGES_SAME: &str = "cages are the same";
+pub const ERR_TARGET_IS_SOURCE: &str = "target cage is the same as source cage";
+pub const ERR_NOT_ADJACENT_TO_TARGET: &str = "cell is not adjacent to target cage";
+pub const ERR_DISCONNECT_SOURCE: &str = "removing cell would disconnect source cage";
+pub const ERR_CELL_ALREADY_IN_TARGET: &str = "cell is already in target cage";
+
 const fn op_kind_of(op: Operator) -> OpKind {
     match op {
         Operator::Add => OpKind::Add,
@@ -118,10 +126,10 @@ pub fn do_insert_cage(
     let n = puzzle_size_u8(puzzle)?;
     let cells_vec: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
     if cells_vec.is_empty() {
-        return Err("cage must have at least one cell".into());
+        return Err(ERR_EMPTY_CAGE.into());
     }
     if !is_edge_connected_component(&cells_vec) {
-        return Err("cage cells must be edge-connected".into());
+        return Err(ERR_NOT_EDGE_CONNECTED.into());
     }
     let poly = Polyomino::new(&cells_vec).map_err(|e| format!("{e:?}"))?;
     let operation = build_operation(op, target);
@@ -214,7 +222,7 @@ pub fn do_merge_cages(
     let cage_a = cage_at_or_err(puzzle, a_anchor)?;
     let cage_b = cage_at_or_err(puzzle, b_anchor)?;
     if cage_a.polyomino() == cage_b.polyomino() {
-        return Err("cages are the same".into());
+        return Err(ERR_CAGES_SAME.into());
     }
     let op = cage_a.operation();
     let poly_a = cage_a.polyomino().clone();
@@ -300,7 +308,7 @@ fn apply_cell_transfer(
         .neighbors_4()
         .any(|nb| tgt_poly.cells().contains(&nb))
     {
-        return Err("cell is not adjacent to target cage".into());
+        return Err(ERR_NOT_ADJACENT_TO_TARGET.into());
     }
     let new_tgt_poly = tgt_poly.insert(cell_obj).map_err(|e| format!("{e:?}"))?;
     let intermediate = puzzle.clone().remove_cage(src_poly).remove_cage(tgt_poly);
@@ -351,7 +359,7 @@ pub fn do_move_cell(
 
     let tgt_cage = cage_at_or_err(puzzle, target_anchor)?;
     if tgt_cage.polyomino() == &src_poly {
-        return Err("target cage is the same as source cage".into());
+        return Err(ERR_TARGET_IS_SOURCE.into());
     }
     let tgt_op = tgt_cage.operation();
     let tgt_poly = tgt_cage.polyomino().clone();
@@ -360,7 +368,7 @@ pub fn do_move_cell(
         .neighbors_4()
         .any(|nb| tgt_poly.cells().contains(&nb))
     {
-        return Err("cell is not adjacent to target cage".into());
+        return Err(ERR_NOT_ADJACENT_TO_TARGET.into());
     }
     if src_poly.len() > 1 {
         let remaining: Vec<Cell> = src_poly
@@ -369,7 +377,7 @@ pub fn do_move_cell(
             .filter(|c| c != &cell_obj)
             .collect();
         if !is_edge_connected_component(&remaining) {
-            return Err("removing cell would disconnect source cage".into());
+            return Err(ERR_DISCONNECT_SOURCE.into());
         }
     }
 
@@ -392,7 +400,7 @@ pub fn do_flip_cell(
 
     let tgt_cage = cage_at_or_err(puzzle, target_anchor)?;
     if tgt_cage.polyomino() == &src_poly {
-        return Err("cell is already in target cage".into());
+        return Err(ERR_CELL_ALREADY_IN_TARGET.into());
     }
     let tgt_op = tgt_cage.operation();
     let tgt_poly = tgt_cage.polyomino().clone();
@@ -405,6 +413,13 @@ pub fn do_flip_cell(
 mod tests {
     use super::*;
     use kenken::{Cage, Operation};
+
+    /// Extracts the error message from a `Result<T, String>` where `T: !Debug`.
+    /// `Result::unwrap_err` would require `T: Debug`, which `kenken::Puzzle` is not.
+    fn expect_err<T>(result: Result<T, String>) -> String {
+        assert!(result.is_err(), "expected Err, got Ok");
+        result.err().unwrap()
+    }
 
     fn add_cage(cells: &[(usize, usize)], target: u16, n: u8) -> Cage {
         let cells: Vec<Cell> = cells.iter().map(|&(r, c)| Cell::new(r, c)).collect();
@@ -490,6 +505,13 @@ mod tests {
     }
 
     #[test]
+    fn cage_options_n_exceeds_u8_returns_empty() {
+        // u8::try_from(256) fails; the function should return empty without panicking.
+        assert!(cage_options(&[(0, 0)], 256).is_empty());
+        assert!(cage_options(&[(0, 0)], usize::MAX).is_empty());
+    }
+
+    #[test]
     fn cage_options_targets_are_ascending() {
         let options = cage_options(&[(0, 0), (0, 1), (1, 0)], 5);
         for opt in &options {
@@ -510,6 +532,13 @@ mod tests {
     fn insert_cage_rejects_empty_cells() {
         let p = Puzzle::new(4).unwrap();
         assert!(do_insert_cage(&p, &[], OpKind::Add, 3).is_err());
+    }
+
+    #[test]
+    fn insert_cage_rejects_disconnected_cells() {
+        let p = Puzzle::new(4).unwrap();
+        let err = expect_err(do_insert_cage(&p, &[(0, 0), (2, 2)], OpKind::Add, 5));
+        assert_eq!(err, ERR_NOT_EDGE_CONNECTED);
     }
 
     #[test]
@@ -932,6 +961,31 @@ mod tests {
         assert_eq!(targets, vec![(0, 1)], "expected exactly one target");
     }
 
+    #[test]
+    fn legal_move_targets_empty_when_cell_not_in_cage() {
+        let p = Puzzle::new(4).unwrap();
+        assert!(legal_move_targets(&p, (0, 0)).is_empty());
+    }
+
+    /// The bottom-right corner cell's 4-neighbors include row=n and column=n,
+    /// which the function must skip without indexing out of range.
+    #[test]
+    fn legal_move_targets_skips_out_of_bounds_neighbors() {
+        // Singleton cage at (2,2) on a 3x3 grid. Its 4-neighbors include
+        // (2,3) and (3,2) which sit past the grid edge; the function must skip
+        // them via the `neighbor.row >= n || neighbor.column >= n` guard.
+        let p = Puzzle::new(3)
+            .unwrap()
+            .insert_cage(given_cage((2, 2), 1, 3))
+            .unwrap()
+            .insert_cage(given_cage((1, 2), 2, 3))
+            .unwrap()
+            .insert_cage(given_cage((2, 1), 3, 3))
+            .unwrap();
+        let targets = legal_move_targets(&p, (2, 2));
+        assert_eq!(targets, vec![(1, 2), (2, 1)]);
+    }
+
     /// A 1-cell singleton cage adjacent to exactly one other cage → that cage is the sole target.
     #[test]
     fn legal_move_targets_includes_only_target_for_singleton_source() {
@@ -993,6 +1047,28 @@ mod tests {
         assert_eq!(tgt.cells().len(), 3);
         // Only 1 cage total
         assert_eq!(next.cages().count(), 1);
+    }
+
+    #[test]
+    fn move_cell_rejects_when_target_is_source_cage() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap();
+        let err = expect_err(do_move_cell(&p, (0, 0), (0, 1)));
+        assert_eq!(err, ERR_TARGET_IS_SOURCE);
+    }
+
+    #[test]
+    fn move_cell_rejects_when_target_cage_not_adjacent() {
+        let p = Puzzle::new(4)
+            .unwrap()
+            .insert_cage(add_cage(&[(0, 0), (0, 1)], 3, 4))
+            .unwrap()
+            .insert_cage(add_cage(&[(3, 2), (3, 3)], 7, 4))
+            .unwrap();
+        let err = expect_err(do_move_cell(&p, (0, 0), (3, 2)));
+        assert_eq!(err, ERR_NOT_ADJACENT_TO_TARGET);
     }
 
     /// Trying to move an inner cell of an I-pentomino should fail.
