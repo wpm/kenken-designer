@@ -202,10 +202,11 @@ fn step_target_picker(entry: OperatorEntry, key: &str) -> Step {
             d.pop();
         }),
         d if is_digit(d) => {
-            if prior_digits.len() >= 4 {
+            let new_digits = format!("{prior_digits}{d}");
+            let Some(new_selected) = jump_to_match(targets, &new_digits) else {
                 return Step::Update(entry);
-            }
-            step_buffer_change(entry, op, selected, &prior_digits, |buf| buf.push_str(d))
+            };
+            Step::Update(replace_target_picker(entry, op, new_selected, new_digits))
         }
         _ => Step::Update(entry),
     }
@@ -494,10 +495,19 @@ mod tests {
     }
 
     #[test]
-    fn target_picker_digit_no_match_keeps_selection() {
-        // Sub targets [1, 2, 3]. Typing "9" doesn't match anything; selection stays.
-        let result = step(target_picker(binary_options(), OpKind::Sub, 1, ""), "9");
-        assert_update(result, target_picker(binary_options(), OpKind::Sub, 1, "9"));
+    fn target_picker_invalid_digit_is_rejected() {
+        // Sub targets [1, 2, 3]. Typing "9" is not a prefix of any valid target,
+        // so the keystroke is ignored entirely (buffer unchanged, selection unchanged).
+        let initial = target_picker(binary_options(), OpKind::Sub, 1, "");
+        assert_update(step(initial.clone(), "9"), initial);
+    }
+
+    #[test]
+    fn target_picker_invalid_extension_digit_is_rejected() {
+        // Mul targets [2, 3, 4, 6, 8, 12]. Buffer "1" matches "12"; typing "5" would
+        // make the buffer "15" which is not a prefix of any target, so it's ignored.
+        let initial = target_picker(binary_options(), OpKind::Mul, 5, "1");
+        assert_update(step(initial.clone(), "5"), initial);
     }
 
     #[test]
@@ -578,9 +588,10 @@ mod tests {
     }
 
     #[test]
-    fn target_picker_digit_stops_at_four_chars() {
-        let initial = target_picker(binary_options(), OpKind::Mul, 5, "1234");
-        assert_update(step(initial.clone(), "5"), initial);
+    fn singleton_invalid_digit_is_rejected() {
+        // Given targets [1, 2, 3, 4]; "9" is not a prefix of any target, so it's ignored.
+        let initial = target_picker(singleton_options(4), OpKind::Given, 0, "");
+        assert_update(step(initial.clone(), "9"), initial);
     }
 
     #[test]

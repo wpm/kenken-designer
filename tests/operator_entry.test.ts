@@ -159,4 +159,41 @@ test.describe('operator entry picker', () => {
     await expect(page.locator('.grid-svg text', { hasText: /^5\+\|$/ }))
       .toHaveCount(1, { timeout: 5000 });
   });
+
+  test('typing an invalid digit in TargetPicker is ignored and does not commit a bogus target', async ({ page }) => {
+    await installTauriStubs(page, makeState(N, PAIR_CAGE));
+    await stubBinaryCageOptions(page);
+
+    await addInvokeHandler(page, 'set_cage_operation', (args, currentState) => {
+      (window as any).__set_op_args__ = args;
+      return currentState;
+    });
+
+    await waitForApp(page);
+
+    await clickGridCell(page, N, 0, 0);
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('+');
+
+    // Add targets are [3, 4, 5]; "9" is not a prefix of any valid target. The
+    // keystroke should be ignored: label stays at the default selection "3+|"
+    // rather than showing the invalid "9+|".
+    await page.keyboard.press('9');
+
+    await expect(page.locator('.grid-svg text', { hasText: /^3\+\|$/ }))
+      .toHaveCount(1, { timeout: 5000 });
+    await expect(page.locator('.grid-svg text', { hasText: /^9\+\|$/ }))
+      .toHaveCount(0);
+
+    // Enter commits the default selection (3), not the typed-but-invalid 9.
+    await page.keyboard.press('Enter');
+
+    await expect.poll(() =>
+      page.evaluate(() => (window as any).__set_op_args__),
+    ).toBeTruthy();
+
+    const args = await page.evaluate(() => (window as any).__set_op_args__);
+    expect(args.op).toBe('Add');
+    expect(args.target).toBe(3);
+  });
 });
