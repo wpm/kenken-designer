@@ -12,13 +12,11 @@ pub struct PuzzleData {
     pub cages: Vec<CageView>,
 }
 
-pub type PuzzleV1 = PuzzleData;
-
 /// Versioned save envelope.
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct SaveEnvelope {
     pub version: u32,
-    pub puzzle: PuzzleV1,
+    pub puzzle: PuzzleData,
 }
 
 /// Errors that can occur when loading a puzzle.
