@@ -401,10 +401,6 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
-    let open = MenuItemBuilder::with_id("open", "Open…").build(app)?;
-    let save = MenuItemBuilder::with_id("save", "Save").build(app)?;
-    let save_as = MenuItemBuilder::with_id("save_as", "Save As…").build(app)?;
-
     #[cfg(any(
         target_os = "linux",
         target_os = "dragonfly",
@@ -421,6 +417,9 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         target_os = "openbsd"
     )))]
     let file_menu = {
+        let open = MenuItemBuilder::with_id("open", "Open…").build(app)?;
+        let save = MenuItemBuilder::with_id("save", "Save").build(app)?;
+        let save_as = MenuItemBuilder::with_id("save_as", "Save As…").build(app)?;
         let close = PredefinedMenuItem::close_window(app, None)?;
         let sep1 = PredefinedMenuItem::separator(app)?;
         let sep2 = PredefinedMenuItem::separator(app)?;
