@@ -22,29 +22,16 @@ pub struct SaveEnvelope {
 }
 
 /// Errors that can occur when loading a puzzle.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum LoadError {
+    #[error("unsupported version: {0}")]
     UnsupportedVersion(u32),
-    Parse(String),
-    Io(String),
-    KenKen(kenken::Error),
-}
-
-impl std::fmt::Display for LoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnsupportedVersion(v) => write!(f, "unsupported version: {v}"),
-            Self::Parse(s) => write!(f, "parse error: {s}"),
-            Self::Io(s) => write!(f, "I/O error: {s}"),
-            Self::KenKen(e) => write!(f, "puzzle error: {e}"),
-        }
-    }
-}
-
-impl From<kenken::Error> for LoadError {
-    fn from(e: kenken::Error) -> Self {
-        Self::KenKen(e)
-    }
+    #[error("parse error: {0}")]
+    Parse(#[from] serde_json::Error),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    KenKen(#[from] kenken::Error),
 }
 
 pub fn load(envelope: SaveEnvelope) -> Result<Puzzle, LoadError> {
@@ -89,15 +76,14 @@ pub fn save(puzzle: &Puzzle, path: &str) -> Result<(), LoadError> {
         version: 1,
         puzzle: puzzle_to_data(puzzle),
     };
-    let json =
-        serde_json::to_string_pretty(&envelope).map_err(|e| LoadError::Parse(e.to_string()))?;
-    std::fs::write(path, json).map_err(|e| LoadError::Io(e.to_string()))
+    let json = serde_json::to_string_pretty(&envelope)?;
+    std::fs::write(path, json)?;
+    Ok(())
 }
 
 pub fn load_from_path(path: &str) -> Result<Puzzle, LoadError> {
-    let content = std::fs::read_to_string(path).map_err(|e| LoadError::Io(e.to_string()))?;
-    let envelope: SaveEnvelope =
-        serde_json::from_str(&content).map_err(|e| LoadError::Parse(e.to_string()))?;
+    let content = std::fs::read_to_string(path)?;
+    let envelope: SaveEnvelope = serde_json::from_str(&content)?;
     load(envelope)
 }
 
@@ -210,6 +196,22 @@ mod tests {
         assert!(
             matches!(err, LoadError::Parse(_)),
             "Expected Parse error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_rejects_invalid_grid_size() {
+        let path = std::env::temp_dir()
+            .join("kenken_test_invalid_grid.kenken")
+            .to_str()
+            .unwrap()
+            .to_string();
+        std::fs::write(&path, r#"{"version": 1, "puzzle": {"n": 0, "cages": []}}"#).unwrap();
+
+        let err = load_from_path(&path).unwrap_err();
+        assert!(
+            matches!(err, LoadError::KenKen(_)),
+            "Expected KenKen error, got {err:?}"
         );
     }
 
