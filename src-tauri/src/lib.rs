@@ -20,6 +20,8 @@ use view::{CageOption, DraftCage, EditResult, OpKind, PuzzleView, RankedTupleVie
 const PUZZLE_UPDATED_EVENT: &str = "puzzle-updated";
 const CLEAR_ALL_CAGES_EVENT: &str = "clear-all-cages";
 
+const ERR_VALUE_OUT_OF_RANGE: &str = "value out of range";
+
 fn commit_new_puzzle(state: &Mutex<Session>, n: usize) -> Result<PuzzleView, String> {
     let puzzle = Puzzle::new(n).map_err(|e| format!("{e:?}"))?;
     let mut session = state.lock().map_err(|e| format!("{e:?}"))?;
@@ -283,7 +285,7 @@ fn apply_narrowing(
     }
     let mut delta = Delta::identity(puzzle.n()).map_err(|e| format!("{e:?}"))?;
     for (cell, v) in cells.iter().zip(tuple.iter()) {
-        let val = u8::try_from(*v).map_err(|e| format!("value out of range: {e}"))?;
+        let val = u8::try_from(*v).map_err(|e| format!("{ERR_VALUE_OUT_OF_RANGE}: {e}"))?;
         delta = delta.set(*cell, Fill::new([val]));
     }
     Ok(PuzzleView::from(
@@ -1386,11 +1388,10 @@ mod tests {
             app.state::<Mutex<Session>>(),
         )
         .unwrap();
-        let result = apply_narrowing((0, 0), vec![300, 1], app.state::<Mutex<Session>>());
-        assert!(result.is_err());
+        let err = apply_narrowing((0, 0), vec![300, 1], app.state::<Mutex<Session>>()).unwrap_err();
         assert!(
-            result.unwrap_err().contains("value out of range"),
-            "error should mention value out of range",
+            err.starts_with(ERR_VALUE_OUT_OF_RANGE),
+            "expected error to start with {ERR_VALUE_OUT_OF_RANGE:?}, got {err:?}"
         );
     }
 
