@@ -3,6 +3,8 @@ pub mod diff;
 mod edit;
 mod persist;
 mod session;
+#[cfg(test)]
+mod test_util;
 mod view;
 
 use std::sync::Mutex;
@@ -1516,18 +1518,6 @@ mod tests {
         assert_eq!(current_n(&app), 4);
     }
 
-    fn unique_tmp_path(stem: &str) -> String {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let nonce = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let pid = std::process::id();
-        std::env::temp_dir()
-            .join(format!("kenken_test_{stem}_{pid}_{nonce}.kenken"))
-            .to_str()
-            .unwrap()
-            .to_string()
-    }
-
     #[test]
     fn save_puzzle_command_writes_file_at_path() {
         let app = empty_session_app(4);
@@ -1539,34 +1529,27 @@ mod tests {
         )
         .unwrap();
 
-        let path = unique_tmp_path("save_writes");
-        save_puzzle(path.clone(), app.state::<Mutex<Session>>()).unwrap();
+        let path = crate::test_util::TmpPath::new("save_writes");
+        save_puzzle(path.as_str().to_owned(), app.state::<Mutex<Session>>()).unwrap();
 
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = std::fs::read_to_string(path.as_str()).unwrap();
         assert!(content.contains("\"version\""));
         assert!(content.contains("\"cages\""));
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn save_puzzle_command_returns_err_for_unwritable_path() {
         let app = empty_session_app(4);
-        let bogus = std::env::temp_dir()
-            .join("kenken_no_such_dir_xyz")
-            .join("nested")
-            .join("missing.kenken")
-            .to_str()
-            .unwrap()
-            .to_string();
-        assert!(save_puzzle(bogus, app.state::<Mutex<Session>>()).is_err());
+        let bogus = crate::test_util::TmpPath::unwritable("save");
+        assert!(save_puzzle(bogus.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
     }
 
     #[test]
     fn save_puzzle_command_returns_err_when_lock_poisoned() {
         let app = empty_session_app(3);
         poison_lock(&app.state::<Mutex<Session>>());
-        let path = unique_tmp_path("save_poisoned");
-        assert!(save_puzzle(path, app.state::<Mutex<Session>>()).is_err());
+        let path = crate::test_util::TmpPath::new("save_poisoned");
+        assert!(save_puzzle(path.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
     }
 
     #[test]
@@ -1579,22 +1562,21 @@ mod tests {
             saver.state::<Mutex<Session>>(),
         )
         .unwrap();
-        let path = unique_tmp_path("load_round_trip");
-        save_puzzle(path.clone(), saver.state::<Mutex<Session>>()).unwrap();
+        let path = crate::test_util::TmpPath::new("load_round_trip");
+        save_puzzle(path.as_str().to_owned(), saver.state::<Mutex<Session>>()).unwrap();
 
         let loader = empty_session_app(2);
-        let view = load_puzzle(path.clone(), loader.state::<Mutex<Session>>()).unwrap();
+        let view = load_puzzle(path.as_str().to_owned(), loader.state::<Mutex<Session>>()).unwrap();
         assert_eq!(view.n, 5);
         assert_eq!(view.cages.len(), 1);
         assert_eq!(current_n(&loader), 5);
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn load_puzzle_command_returns_err_for_missing_file() {
         let app = empty_session_app(4);
-        let missing = unique_tmp_path("load_missing");
-        assert!(load_puzzle(missing, app.state::<Mutex<Session>>()).is_err());
+        let missing = crate::test_util::TmpPath::new("load_missing");
+        assert!(load_puzzle(missing.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
         assert_eq!(current_n(&app), 4);
     }
 
@@ -1602,11 +1584,10 @@ mod tests {
     fn load_puzzle_command_returns_err_when_lock_poisoned() {
         let app = empty_session_app(3);
         // Pre-create a real file so the failure point is the lock, not missing input.
-        let path = unique_tmp_path("load_poisoned");
-        persist::save(&Puzzle::new(3).unwrap(), &path).unwrap();
+        let path = crate::test_util::TmpPath::new("load_poisoned");
+        persist::save(&Puzzle::new(3).unwrap(), path.as_str()).unwrap();
         poison_lock(&app.state::<Mutex<Session>>());
-        assert!(load_puzzle(path.clone(), app.state::<Mutex<Session>>()).is_err());
-        let _ = std::fs::remove_file(&path);
+        assert!(load_puzzle(path.as_str().to_owned(), app.state::<Mutex<Session>>()).is_err());
     }
 
     fn assert_menu_event_does_not_mutate_session(id: &str) {

@@ -224,14 +224,8 @@ mod tests {
 
     #[test]
     fn load_from_path_returns_io_error_for_missing_file() {
-        let path = std::env::temp_dir()
-            .join("kenken_test_missing_file_xyz.kenken")
-            .to_str()
-            .unwrap()
-            .to_string();
-        let _ = std::fs::remove_file(&path);
-
-        let err = load_from_path(&path).unwrap_err();
+        let path = crate::test_util::TmpPath::new("load_missing");
+        let err = load_from_path(path.as_str()).unwrap_err();
         assert!(
             matches!(err, LoadError::Io(_)),
             "Expected Io error, got {err:?}"
@@ -241,15 +235,8 @@ mod tests {
     #[test]
     fn save_returns_io_error_when_parent_dir_missing() {
         let puzzle = Puzzle::new(3).unwrap();
-        let path = std::env::temp_dir()
-            .join("kenken_no_such_dir_xyz")
-            .join("nested")
-            .join("missing.kenken")
-            .to_str()
-            .unwrap()
-            .to_string();
-
-        let err = save(&puzzle, &path).unwrap_err();
+        let path = crate::test_util::TmpPath::unwritable("save");
+        let err = save(&puzzle, path.as_str()).unwrap_err();
         assert!(
             matches!(err, LoadError::Io(_)),
             "Expected Io error, got {err:?}"
