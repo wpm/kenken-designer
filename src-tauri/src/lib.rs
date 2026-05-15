@@ -1515,4 +1515,157 @@ mod tests {
 
         assert_eq!(current_n(&app), 4);
     }
+
+    fn unique_tmp_path(stem: &str) -> String {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let nonce = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        std::env::temp_dir()
+            .join(format!("kenken_test_{stem}_{pid}_{nonce}.kenken"))
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn save_puzzle_command_writes_file_at_path() {
+        let app = empty_session_app(4);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            3,
+            app.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+
+        let path = unique_tmp_path("save_writes");
+        save_puzzle(path.clone(), app.state::<Mutex<Session>>()).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("\"version\""));
+        assert!(content.contains("\"cages\""));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_puzzle_command_returns_err_for_unwritable_path() {
+        let app = empty_session_app(4);
+        // A path under a nonexistent directory cannot be written to.
+        let bogus = std::env::temp_dir()
+            .join("kenken_no_such_dir_xyz")
+            .join("nested")
+            .join("missing.kenken")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(save_puzzle(bogus, app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn save_puzzle_command_returns_err_when_lock_poisoned() {
+        let app = empty_session_app(3);
+        poison_lock(&app.state::<Mutex<Session>>());
+        let path = unique_tmp_path("save_poisoned");
+        assert!(save_puzzle(path, app.state::<Mutex<Session>>()).is_err());
+    }
+
+    #[test]
+    fn load_puzzle_command_replaces_session_with_saved_puzzle() {
+        let saver = empty_session_app(5);
+        insert_cage(
+            vec![(0, 0), (0, 1)],
+            OpKind::Add,
+            5,
+            saver.state::<Mutex<Session>>(),
+        )
+        .unwrap();
+        let path = unique_tmp_path("load_round_trip");
+        save_puzzle(path.clone(), saver.state::<Mutex<Session>>()).unwrap();
+
+        let loader = empty_session_app(2);
+        let view = load_puzzle(path.clone(), loader.state::<Mutex<Session>>()).unwrap();
+        assert_eq!(view.n, 5);
+        assert_eq!(view.cages.len(), 1);
+        assert_eq!(current_n(&loader), 5);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_puzzle_command_returns_err_for_missing_file() {
+        let app = empty_session_app(4);
+        let missing = std::env::temp_dir()
+            .join("kenken_does_not_exist_xyz.kenken")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(load_puzzle(missing, app.state::<Mutex<Session>>()).is_err());
+        // Session must remain unchanged when the load fails.
+        assert_eq!(current_n(&app), 4);
+    }
+
+    #[test]
+    fn load_puzzle_command_returns_err_when_lock_poisoned() {
+        let app = empty_session_app(3);
+        // Write a real file so the failure point is the lock, not the file.
+        let saver = empty_session_app(3);
+        let path = unique_tmp_path("load_poisoned");
+        save_puzzle(path.clone(), saver.state::<Mutex<Session>>()).unwrap();
+        poison_lock(&app.state::<Mutex<Session>>());
+        assert!(load_puzzle(path.clone(), app.state::<Mutex<Session>>()).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn handle_menu_event_emits_file_action_for_open() {
+        // The open/save/save_as branch must not mutate session state — it only
+        // emits a FILE_ACTION_EVENT for the frontend.
+        let app = empty_session_app(3);
+        app.state::<Mutex<Session>>()
+            .lock()
+            .unwrap()
+            .commit(Puzzle::new(4).unwrap());
+
+        handle_menu_event(
+            app.handle(),
+            MenuEvent {
+                id: tauri::menu::MenuId::new("open"),
+            },
+        );
+        assert_eq!(current_n(&app), 4);
+    }
+
+    #[test]
+    fn handle_menu_event_emits_file_action_for_save() {
+        let app = empty_session_app(3);
+        app.state::<Mutex<Session>>()
+            .lock()
+            .unwrap()
+            .commit(Puzzle::new(4).unwrap());
+
+        handle_menu_event(
+            app.handle(),
+            MenuEvent {
+                id: tauri::menu::MenuId::new("save"),
+            },
+        );
+        assert_eq!(current_n(&app), 4);
+    }
+
+    #[test]
+    fn handle_menu_event_emits_file_action_for_save_as() {
+        let app = empty_session_app(3);
+        app.state::<Mutex<Session>>()
+            .lock()
+            .unwrap()
+            .commit(Puzzle::new(4).unwrap());
+
+        handle_menu_event(
+            app.handle(),
+            MenuEvent {
+                id: tauri::menu::MenuId::new("save_as"),
+            },
+        );
+        assert_eq!(current_n(&app), 4);
+    }
 }

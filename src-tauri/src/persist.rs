@@ -221,4 +221,55 @@ mod tests {
             "File should contain newlines (pretty-printed)"
         );
     }
+
+    #[test]
+    fn load_from_path_returns_io_error_for_missing_file() {
+        let path = std::env::temp_dir()
+            .join("kenken_test_missing_file_xyz.kenken")
+            .to_str()
+            .unwrap()
+            .to_string();
+        // Make sure the file doesn't exist.
+        let _ = std::fs::remove_file(&path);
+
+        let err = load_from_path(&path).unwrap_err();
+        assert!(
+            matches!(err, LoadError::Io(_)),
+            "Expected Io error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn save_returns_io_error_when_parent_dir_missing() {
+        let puzzle = Puzzle::new(3).unwrap();
+        let path = std::env::temp_dir()
+            .join("kenken_no_such_dir_xyz")
+            .join("nested")
+            .join("missing.kenken")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let err = save(&puzzle, &path).unwrap_err();
+        assert!(
+            matches!(err, LoadError::Io(_)),
+            "Expected Io error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_envelope_rejects_unsupported_version() {
+        let envelope = SaveEnvelope {
+            version: 42,
+            puzzle: PuzzleData {
+                n: 4,
+                cages: vec![],
+            },
+        };
+        let err = load(envelope).unwrap_err();
+        assert!(
+            matches!(err, LoadError::UnsupportedVersion(42)),
+            "Expected UnsupportedVersion(42), got {err:?}"
+        );
+    }
 }
