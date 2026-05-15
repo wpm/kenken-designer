@@ -807,16 +807,11 @@ fn handle_save(current_path: RwSignal<Option<String>>, force_prompt: bool) {
             }
         };
         let Some(path) = path else { return };
-        let Some(args) = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok() else {
-            return;
-        };
-        match invoke("save_puzzle", args).await {
-            Ok(result) => {
-                if serde_wasm_bindgen::from_value::<()>(result).is_ok() {
-                    current_path.set(Some(path));
-                }
-            }
-            Err(ref e) => crate::toast::push_js_error(e),
+        if invoke_cmd::<_, ()>("save_puzzle", PathArgs { path: path.clone() })
+            .await
+            .is_some()
+        {
+            current_path.set(Some(path));
         }
     });
 }
@@ -831,17 +826,11 @@ fn handle_open(
     spawn_local(async move {
         let path = prompt_open_path().await;
         let Some(path) = path else { return };
-        let Some(args) = serde_wasm_bindgen::to_value(&PathArgs { path: path.clone() }).ok() else {
-            return;
-        };
-        match invoke("load_puzzle", args).await {
-            Ok(value) => {
-                if let Ok(view) = serde_wasm_bindgen::from_value::<PuzzleView>(value) {
-                    set_view(set_puzzle, set_flash_diff, view);
-                    current_path.set(Some(path));
-                }
-            }
-            Err(ref e) => crate::toast::push_js_error(e),
+        if let Some(view) =
+            invoke_cmd::<_, PuzzleView>("load_puzzle", PathArgs { path: path.clone() }).await
+        {
+            set_view(set_puzzle, set_flash_diff, view);
+            current_path.set(Some(path));
         }
     });
 }
